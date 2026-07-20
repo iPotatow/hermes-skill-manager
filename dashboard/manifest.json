@@ -1,0 +1,7 @@
+{
+  "name": "desktop-skill-manager",
+  "label": "Desktop Skill Manager Backend",
+  "description": "Backend API for the native Hermes Desktop skill manager.",
+  "version": "1.0.0",
+  "api": "plugin_api.py"
+}
