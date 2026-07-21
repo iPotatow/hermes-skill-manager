@@ -9,7 +9,7 @@
 - Desktop 侧边栏页面与 `⌘K` 命令入口
 - Dashboard 清单仅挂载后端 API，不注册 Dashboard 侧边栏
 - Hermes 与 Codex 技能均使用紧凑表格展示，不使用技能卡片
-- 按来源、分类和状态筛选，支持全文搜索
+- 搜索、来源、分类和状态筛选集中在一行，支持全文搜索
 - 内建技能中文简介取自 [Hermes 官方中文技能目录](https://hermes-agent.nousresearch.com/docs/zh-Hans/reference/skills-catalog)，后台定时刷新并保留离线快照
 - 技能详情、最近操作、诊断与自动刷新
 - 页面顶部提供插件更新按钮，点击后需再次确认；更新成功会自动热加载 Desktop 入口
@@ -89,4 +89,4 @@ node --test tests/desktop_plugin_smoke.test.js
 python3 -m unittest discover -s tests -v
 ```
 
-插件 ID：`skill-manager` · Desktop 路径：`/skill-manager` · 版本：`1.5.6`
+插件 ID：`skill-manager` · Desktop 路径：`/skill-manager` · 版本：`1.5.7`

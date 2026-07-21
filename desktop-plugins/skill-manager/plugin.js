@@ -677,11 +677,13 @@ function PageHeader({ counts, fetching, onRefresh, onUpdate, total, t, updating 
 
 function FilterPanel({ categories, codexCount, counts, filters, missingCount, onChange, rows, visibleCount, t }) {
   const showingCodex = filters.source === 'codex'
-  return jsxs('section', {
-    className: 'space-y-3 rounded-md border border-(--ui-stroke-secondary) p-3',
-    children: [
+  return jsx('section', {
+    className: 'overflow-x-auto rounded-md border border-(--ui-stroke-secondary) p-3',
+    children: jsxs('div', {
+      className: 'flex min-w-max items-center gap-2',
+      children: [
       jsx('div', {
-        className: 'flex flex-wrap gap-2',
+        className: 'flex shrink-0 gap-2',
         children: SOURCES.map(key => jsx(Button, {
           size: 'sm',
           variant: filters.source === key ? 'default' : 'secondary',
@@ -691,52 +693,54 @@ function FilterPanel({ categories, codexCount, counts, filters, missingCount, on
             : key === 'codex' ? codexCount : counts[key] || 0}`
         }, key))
       }),
-      jsxs('div', {
-        className: showingCodex
-          ? 'grid gap-2'
-          : 'grid gap-2 lg:grid-cols-[minmax(16rem,1fr)_12rem_12rem_auto]',
+      jsx('div', {
+        'aria-hidden': true,
+        className: 'mx-1 h-6 w-px shrink-0 bg-(--ui-stroke-secondary)'
+      }),
+      jsx(Input, {
+        'aria-label': t('search'),
+        className: 'w-[22rem] shrink-0',
+        placeholder: t('searchPlaceholder'),
+        value: filters.query,
+        onChange: event => onChange('query', event.target.value)
+      }),
+      showingCodex ? null : jsx('select', {
+        'aria-label': t('fields.category'),
+        className: 'h-8 w-[12rem] shrink-0 rounded border border-(--ui-stroke-secondary) bg-transparent px-2 text-sm',
+        value: filters.category,
+        onChange: event => onChange('category', event.target.value),
         children: [
-          jsx(Input, {
-            'aria-label': t('search'),
-            placeholder: t('searchPlaceholder'),
-            value: filters.query,
-            onChange: event => onChange('query', event.target.value)
+          jsx('option', { value: 'all', children: t('allCategories') }),
+          ...categories.map(value => jsx('option', { value, children: value }, value))
+        ]
+      }),
+      showingCodex ? null : jsx('select', {
+        'aria-label': t('fields.status'),
+        className: 'h-8 w-[10rem] shrink-0 rounded border border-(--ui-stroke-secondary) bg-transparent px-2 text-sm',
+        value: filters.status,
+        onChange: event => onChange('status', event.target.value),
+        children: STATUSES.map(value => jsx('option', {
+          value,
+          children: t(`statuses.${value}`)
+        }, value))
+      }),
+      showingCodex ? null : jsxs('label', {
+        className: 'flex min-h-8 shrink-0 items-center gap-2 text-sm',
+        children: [
+          jsx('input', {
+            type: 'checkbox',
+            checked: filters.showDeleted,
+            onChange: event => onChange('showDeleted', event.target.checked)
           }),
-          showingCodex ? null : jsx('select', {
-            'aria-label': t('fields.category'),
-            className: 'h-8 rounded border border-(--ui-stroke-secondary) bg-transparent px-2 text-sm',
-            value: filters.category,
-            onChange: event => onChange('category', event.target.value),
-            children: [
-              jsx('option', { value: 'all', children: t('allCategories') }),
-              ...categories.map(value => jsx('option', { value, children: value }, value))
-            ]
-          }),
-          showingCodex ? null : jsx('select', {
-            'aria-label': t('fields.status'),
-            className: 'h-8 rounded border border-(--ui-stroke-secondary) bg-transparent px-2 text-sm',
-            value: filters.status,
-            onChange: event => onChange('status', event.target.value),
-            children: STATUSES.map(value => jsx('option', {
-              value,
-              children: t(`statuses.${value}`)
-            }, value))
-          }),
-          showingCodex ? null : jsxs('label', { className: 'flex min-h-8 items-center gap-2 text-sm', children: [
-            jsx('input', {
-              type: 'checkbox',
-              checked: filters.showDeleted,
-              onChange: event => onChange('showDeleted', event.target.checked)
-            }),
-            `${t('showDeleted')} (${missingCount})`
-          ] })
+          `${t('showDeleted')} (${missingCount})`
         ]
       }),
       jsx('div', {
-        className: 'text-xs text-(--ui-text-tertiary)',
+        className: 'ml-2 shrink-0 text-xs text-(--ui-text-tertiary)',
         children: t('results', visibleCount, rows.length)
       })
-    ]
+      ]
+    })
   })
 }
 

@@ -75,6 +75,14 @@ test('main table columns are skill category source type and actions', () => {
   assert.match(source, /const rawSourceOf = row => row\.rawSource \|\| row\.source \|\| sourceOf\(row\)/)
 })
 
+test('search and filters stay on one horizontally scrollable row', () => {
+  assert.match(source, /overflow-x-auto rounded-md border[^\n]*p-3/)
+  assert.match(source, /className: 'flex min-w-max items-center gap-2'/)
+  assert.match(source, /className: 'flex shrink-0 gap-2'/)
+  assert.match(source, /className: 'w-\[22rem\] shrink-0'/)
+  assert.doesNotMatch(source, /lg:grid-cols-\[minmax\(16rem,1fr\)_12rem_12rem_auto\]/)
+})
+
 test('confirmation dialog can fill the exact skill name with one click', () => {
   assert.match(source, /confirmFill: '填入名称'/)
   assert.match(source, /onClick:\s*\(\) => setValue\(pending\.row\.name\)/)
