@@ -7,6 +7,7 @@ English | [简体中文](README.md)
 ## Features
 
 - Native Desktop sidebar page and `⌘K` command
+- The Dashboard manifest mounts backend APIs without adding a Dashboard sidebar item
 - Full-text search with source, category, and status filters
 - Skill details, recent actions, diagnostics, and automatic refresh
 - A page-level plugin update button with an explicit second confirmation and automatic Desktop entry hot reload
@@ -72,4 +73,4 @@ node --test tests/desktop_plugin_smoke.test.js
 python3 -m unittest discover -s tests -v
 ```
 
-Plugin ID: `desktop-skill-manager` · Desktop route: `/desktop-skill-manager` · Version: `1.4.0`
+Plugin ID: `desktop-skill-manager` · Desktop route: `/desktop-skill-manager` · Version: `1.4.1`

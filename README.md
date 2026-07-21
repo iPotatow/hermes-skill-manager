@@ -7,6 +7,7 @@
 ## 功能
 
 - Desktop 侧边栏页面与 `⌘K` 命令入口
+- Dashboard 清单仅挂载后端 API，不注册 Dashboard 侧边栏
 - 按来源、分类和状态筛选，支持全文搜索
 - 技能详情、最近操作、诊断与自动刷新
 - 页面顶部提供插件更新按钮，点击后需再次确认；更新成功会自动热加载 Desktop 入口
@@ -72,4 +73,4 @@ node --test tests/desktop_plugin_smoke.test.js
 python3 -m unittest discover -s tests -v
 ```
 
-插件 ID：`desktop-skill-manager` · Desktop 路径：`/desktop-skill-manager` · 版本：`1.4.0`
+插件 ID：`desktop-skill-manager` · Desktop 路径：`/desktop-skill-manager` · 版本：`1.4.1`

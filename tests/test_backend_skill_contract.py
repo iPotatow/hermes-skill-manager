@@ -459,6 +459,12 @@ class BackendSkillContractTest(unittest.TestCase):
         self.assertIn(f"版本：`{version}`", (ROOT / "README.md").read_text(encoding="utf-8"))
         self.assertIn(f"Version: `{version}`", (ROOT / "README_EN.md").read_text(encoding="utf-8"))
 
+    def test_dashboard_manifest_hides_backend_only_plugin_from_sidebar(self):
+        manifest = json.loads((DASHBOARD / "manifest.json").read_text(encoding="utf-8"))
+        self.assertEqual(manifest["api"], "plugin_api.py")
+        self.assertIs(manifest["tab"]["hidden"], True)
+        self.assertNotIn("entry", manifest)
+
     def test_profile_skill_resolution_uses_supported_hermes_helper(self):
         source = (DASHBOARD / "desktop_skill_manager" / "paths.py").read_text(encoding="utf-8")
         self.assertIn("from tools.skills_tool import _skills_dir", source)
