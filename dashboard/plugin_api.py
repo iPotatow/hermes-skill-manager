@@ -97,6 +97,11 @@ async def update_skill(action: SkillAction) -> dict[str, Any]:
     return _run(lambda: _manager().update(action.name))
 
 
+@router.post("/plugin-update")
+async def update_plugin(action: SkillAction) -> dict[str, Any]:
+    return _run(lambda: _manager().update_plugin(action.confirm))
+
+
 @router.post("/sync-codex")
 async def sync_skill_to_codex(action: SkillAction) -> dict[str, Any]:
     return _run(lambda: _manager().sync_codex(

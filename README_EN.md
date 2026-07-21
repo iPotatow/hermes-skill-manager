@@ -9,6 +9,7 @@ English | [简体中文](README.md)
 - Native Desktop sidebar page and `⌘K` command
 - Full-text search with source, category, and status filters
 - Skill details, recent actions, diagnostics, and automatic refresh
+- A page-level plugin update button with an explicit second confirmation and automatic Desktop entry hot reload
 - Built-in reset/delete/restore; Hub reset/update/delete; local delete
 - Exact-name confirmation for delete and reset
 - Community and local skills show the “Sync” action and can be copied to `$CODEX_HOME/skills/<skill-name>`; built-ins do not show it, and replacement requires exact-name confirmation
@@ -35,6 +36,8 @@ cp desktop-plugins/desktop-skill-manager/plugin.js \
 ```
 
 Restart the Hermes gateway after Python backend changes. The Desktop file hot-reloads automatically; if **Skills** does not appear, run **Reload desktop plugins** from `⌘K`.
+
+After installation, you can also select **Update plugin** at the top of the page. Once confirmed, Hermes pulls the installed Git checkout and atomically synchronizes the Desktop entry. Restart the Hermes gateway if backend files changed. If uncommitted changes conflict with the update, Git stops and the UI shows its original error.
 
 ## Architecture
 
@@ -69,4 +72,4 @@ node --test tests/desktop_plugin_smoke.test.js
 python3 -m unittest discover -s tests -v
 ```
 
-Plugin ID: `desktop-skill-manager` · Desktop route: `/desktop-skill-manager` · Version: `1.3.0`
+Plugin ID: `desktop-skill-manager` · Desktop route: `/desktop-skill-manager` · Version: `1.4.0`

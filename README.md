@@ -9,6 +9,7 @@
 - Desktop 侧边栏页面与 `⌘K` 命令入口
 - 按来源、分类和状态筛选，支持全文搜索
 - 技能详情、最近操作、诊断与自动刷新
+- 页面顶部提供插件更新按钮，点击后需再次确认；更新成功会自动热加载 Desktop 入口
 - 内建技能重置、删除、恢复；Hub 技能重置、更新、删除；本地技能删除
 - 删除和重置要求输入完整技能名确认
 - 社区和本地技能显示“同步”按钮，可一键同步到 `$CODEX_HOME/skills/<技能名>`；内建技能不显示该按钮，覆盖已有 Codex 技能时要求输入完整技能名确认
@@ -35,6 +36,8 @@ cp desktop-plugins/desktop-skill-manager/plugin.js \
 ```
 
 修改 Python 后端后需要重启 Hermes gateway。Desktop 文件会自动热加载；若侧边栏未出现“技能”，按 `⌘K` 运行 **Reload desktop plugins**。
+
+安装后也可在页面顶部点击“更新插件”。确认后，Hermes 会通过安装目录的 Git 仓库拉取最新版本，并原子同步 Desktop 入口；若后端有变化，仍需重启 Hermes gateway。安装目录中的未提交修改如与更新冲突，Git 会停止更新，界面会显示原始错误。
 
 ## 架构
 
@@ -69,4 +72,4 @@ node --test tests/desktop_plugin_smoke.test.js
 python3 -m unittest discover -s tests -v
 ```
 
-插件 ID：`desktop-skill-manager` · Desktop 路径：`/desktop-skill-manager` · 版本：`1.3.0`
+插件 ID：`desktop-skill-manager` · Desktop 路径：`/desktop-skill-manager` · 版本：`1.4.0`

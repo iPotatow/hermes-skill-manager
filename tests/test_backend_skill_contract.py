@@ -5,8 +5,10 @@ import re
 import sys
 import tempfile
 import threading
+import types
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -16,9 +18,15 @@ if str(DASHBOARD) not in sys.path:
     sys.path.insert(0, str(DASHBOARD))
 
 from desktop_skill_manager.errors import SkillManagerError
-from desktop_skill_manager.filesystem import copy_skill, safe_descendant, validate_sync_source
+from desktop_skill_manager.filesystem import (
+    copy_file_atomic,
+    copy_skill,
+    safe_descendant,
+    validate_sync_source,
+)
 from desktop_skill_manager.inventory import SkillInventory, capture
 from desktop_skill_manager.paths import SkillPaths
+from desktop_skill_manager.runtime import HermesRuntime
 from desktop_skill_manager.service import SkillManager
 from desktop_skill_manager.state import StateStore
 
@@ -71,6 +79,10 @@ class RuntimeStub:
     def update_hub(self, name):
         self.calls.append(("update", name))
 
+    def update_plugin(self, name, plugin_root, desktop_entry):
+        self.calls.append(("plugin-update", name, plugin_root, desktop_entry))
+        return {"ok": True, "unchanged": False, "desktopPath": str(desktop_entry)}
+
 
 class InventoryStub:
     def __init__(self, rows, source_path=None, target_path=None):
@@ -104,6 +116,48 @@ class InventoryStub:
 
 
 class BackendSkillContractTest(unittest.TestCase):
+    def test_copy_file_atomic_replaces_desktop_entry_without_temporary_files(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "checkout" / "plugin.js"
+            target = root / "active" / "plugin.js"
+            source.parent.mkdir()
+            target.parent.mkdir()
+            source.write_text("new entry", encoding="utf-8")
+            target.write_text("old entry", encoding="utf-8")
+
+            copy_file_atomic(source, target)
+
+            self.assertEqual(target.read_text(encoding="utf-8"), "new entry")
+            self.assertFalse(list(target.parent.glob(".*.tmp")))
+
+    def test_runtime_uses_hermes_plugin_updater_then_syncs_desktop_entry(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            plugin_root = root / "checkout"
+            source = plugin_root / "desktop-plugins" / "desktop-skill-manager" / "plugin.js"
+            target = root / "active" / "plugin.js"
+            source.parent.mkdir(parents=True)
+            source.write_text("updated entry", encoding="utf-8")
+
+            plugins_cmd = types.ModuleType("hermes_cli.plugins_cmd")
+            plugins_cmd.dashboard_update_user_plugin = lambda name: {
+                "ok": True, "name": name, "unchanged": False, "output": "updated"
+            }
+            hermes_cli = types.ModuleType("hermes_cli")
+            hermes_cli.__path__ = []
+            with patch.dict(sys.modules, {
+                "hermes_cli": hermes_cli,
+                "hermes_cli.plugins_cmd": plugins_cmd,
+            }):
+                result = HermesRuntime.update_plugin(
+                    "desktop-skill-manager", plugin_root, target
+                )
+
+            self.assertEqual(target.read_text(encoding="utf-8"), "updated entry")
+            self.assertTrue(result["restartRequired"])
+            self.assertEqual(result["desktopPath"], str(target))
+
     def test_copy_skill_is_complete_atomic_and_requires_force(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -310,6 +364,29 @@ class BackendSkillContractTest(unittest.TestCase):
             ])
             self.assertIn(("reset-hub", "owner/repo", "tools"), runtime.calls)
 
+    def test_plugin_update_requires_confirmation_syncs_entry_and_records_history(self):
+        with tempfile.TemporaryDirectory() as directory:
+            paths = SkillPaths(home_override=Path(directory) / "hermes")
+            state = StateStub()
+            runtime = RuntimeStub()
+            manager = SkillManager(paths=paths, state=state, runtime=runtime)
+
+            with self.assertRaises(SkillManagerError) as raised:
+                manager.update_plugin("wrong")
+            self.assertEqual(raised.exception.status_code, 400)
+            self.assertEqual(runtime.calls, [])
+
+            result = manager.update_plugin("desktop-skill-manager")
+
+            self.assertTrue(result["ok"])
+            self.assertEqual(runtime.calls, [(
+                "plugin-update",
+                "desktop-skill-manager",
+                ROOT,
+                paths.home / "desktop-plugins" / "desktop-skill-manager" / "plugin.js",
+            )])
+            self.assertEqual(state.events[0]["action"], "plugin-update")
+
     def test_inventory_contract_keeps_counts_history_diagnostics_and_paths(self):
         class InventoryForResponse:
             def bundled_skills(self, diagnostics):
@@ -350,7 +427,10 @@ class BackendSkillContractTest(unittest.TestCase):
 
     def test_http_adapter_translates_domain_errors_and_keeps_routes_thin(self):
         module = load_backend()
-        expected_routes = {"/inventory", "/delete", "/reset", "/restore", "/update", "/sync-codex"}
+        expected_routes = {
+            "/inventory", "/delete", "/reset", "/restore", "/update",
+            "/plugin-update", "/sync-codex",
+        }
         if hasattr(module.router, "routes"):
             self.assertEqual({route.path for route in module.router.routes}, expected_routes)
         else:

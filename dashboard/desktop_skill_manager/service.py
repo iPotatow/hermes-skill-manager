@@ -6,6 +6,7 @@ import shutil
 import threading
 from typing import Any, Callable
 
+from .constants import PLUGIN_ID
 from .errors import SkillManagerError
 from .filesystem import copy_skill
 from .inventory import Diagnostic, SkillInventory
@@ -18,6 +19,7 @@ class SkillManager:
     """The use-case boundary consumed by the thin FastAPI adapter."""
 
     _sync_lock = threading.RLock()
+    _plugin_update_lock = threading.RLock()
 
     def __init__(
         self,
@@ -146,6 +148,19 @@ class SkillManager:
         self._run_external(lambda: self.runtime.update_hub(row["name"]))
         self._complete_mutation("update", row)
         return {"ok": True, "skill": row}
+
+    def update_plugin(self, confirm: str) -> dict[str, Any]:
+        """Update this plugin after an explicit yes/no confirmation in Desktop."""
+
+        self._confirm(confirm, PLUGIN_ID)
+        with self._plugin_update_lock:
+            result = self._run_external(lambda: self.runtime.update_plugin(
+                PLUGIN_ID,
+                self.paths.plugin_root,
+                self.paths.desktop_plugin_entry,
+            ))
+        self._record("plugin-update", {"name": PLUGIN_ID, "kind": "plugin"})
+        return result
 
     def sync_codex(
         self,

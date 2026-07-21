@@ -6,6 +6,8 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
+from .constants import PLUGIN_ID
+
 
 def resolve_hermes_home() -> Path:
     try:
@@ -55,12 +57,24 @@ class SkillPaths:
         return self.codex_home / "skills"
 
     @property
+    def plugin_root(self) -> Path:
+        """Root of the installed git checkout Hermes can update."""
+
+        return Path(__file__).resolve().parents[2]
+
+    @property
+    def desktop_plugin_entry(self) -> Path:
+        """Active Desktop entry copied from the installed plugin checkout."""
+
+        return self.home / "desktop-plugins" / PLUGIN_ID / "plugin.js"
+
+    @property
     def state(self) -> Path:
         return self.home / "state" / "plugins" / "desktop-skill-manager.json"
 
     @property
     def legacy_state(self) -> Path:
-        return Path(__file__).resolve().parents[2] / "state.json"
+        return self.plugin_root / "state.json"
 
     @property
     def builtin_catalog(self) -> Path:

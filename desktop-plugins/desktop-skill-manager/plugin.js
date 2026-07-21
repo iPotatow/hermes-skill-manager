@@ -31,6 +31,12 @@ const MESSAGES = {
     searchPlaceholder: 'Search skills, descriptions, sources, statuses, or paths',
     refresh: 'Refresh',
     refreshing: 'Refreshing',
+    pluginUpdateButton: 'Update plugin',
+    pluginUpdateTitle: 'Update Skill Manager?',
+    pluginUpdateBody: 'Hermes will pull the latest plugin version and reload the Desktop entry. If backend files changed, restart the Hermes gateway afterward.',
+    pluginUpdateConfirm: 'Update now',
+    pluginUpdateSuccess: 'Plugin updated. Restart the Hermes gateway to apply backend changes.',
+    pluginUpToDate: 'The plugin is already up to date.',
     retry: 'Retry',
     showDeleted: 'Show deleted built-ins',
     results: (shown, total) => `${shown} of ${total}`,
@@ -70,7 +76,10 @@ const MESSAGES = {
       path: 'Hermes path', identifier: 'Identifier', installed: 'Installed',
       updated: 'Updated', codexStatus: 'Codex status', codexPath: 'Codex path'
     },
-    actions: { delete: 'Delete', reset: 'Reset', update: 'Update', restore: 'Restore', 'sync-codex': 'Sync' },
+    actions: {
+      delete: 'Delete', reset: 'Reset', update: 'Update', restore: 'Restore',
+      'sync-codex': 'Sync', 'plugin-update': 'Plugin update'
+    },
     confirmTitle: { delete: 'Delete skill', reset: 'Reset skill', 'sync-codex': 'Replace Codex skill' },
     confirmBody: {
       delete: name => `This permanently removes the local files for ${name}. Type the exact skill name to continue.`,
@@ -85,6 +94,12 @@ const MESSAGES = {
     searchPlaceholder: '搜索技能、简介、来源、状态或路径',
     refresh: '刷新',
     refreshing: '刷新中',
+    pluginUpdateButton: '更新插件',
+    pluginUpdateTitle: '更新技能管理插件？',
+    pluginUpdateBody: 'Hermes 将拉取最新插件版本并重新加载 Desktop 入口。如果后端文件有变化，更新后还需重启 Hermes 网关。',
+    pluginUpdateConfirm: '立即更新',
+    pluginUpdateSuccess: '插件已更新。请重启 Hermes 网关以应用后端变更。',
+    pluginUpToDate: '插件已是最新版本。',
     retry: '重试',
     showDeleted: '显示已删除内建',
     results: (shown, total) => `显示 ${shown} / ${total}`,
@@ -124,7 +139,10 @@ const MESSAGES = {
       path: 'Hermes 路径', identifier: '标识', installed: '安装时间',
       updated: '更新时间', codexStatus: 'Codex 状态', codexPath: 'Codex 路径'
     },
-    actions: { delete: '删除', reset: '重置', update: '更新', restore: '恢复', 'sync-codex': '同步' },
+    actions: {
+      delete: '删除', reset: '重置', update: '更新', restore: '恢复',
+      'sync-codex': '同步', 'plugin-update': '插件更新'
+    },
     confirmTitle: { delete: '删除技能', reset: '重置技能', 'sync-codex': '覆盖 Codex 技能' },
     confirmBody: {
       delete: name => `这会永久删除 ${name} 的本地文件。请输入完整技能名继续。`,
@@ -254,6 +272,28 @@ function useSkillMutation(t, onComplete, onConflict) {
         onConflict(variables)
         return
       }
+      host.notify({ kind: 'error', message: errorMessage(error, t('unknownError'), t) })
+    }
+  })
+}
+
+function usePluginUpdate(t, onComplete) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: () => pluginContext.rest('/plugin-update', {
+      method: 'POST',
+      body: { confirm: ID },
+      timeoutMs: 70000
+    }),
+    onSuccess: data => {
+      host.notify({
+        kind: 'success',
+        message: t(data.unchanged ? 'pluginUpToDate' : 'pluginUpdateSuccess')
+      })
+      onComplete()
+      queryClient.invalidateQueries({ queryKey: QUERY_KEY })
+    },
+    onError: error => {
       host.notify({ kind: 'error', message: errorMessage(error, t('unknownError'), t) })
     }
   })
@@ -403,6 +443,40 @@ function ConfirmOverlay({ busy, onCancel, onConfirm, pending, t }) {
   })
 }
 
+function PluginUpdateOverlay({ busy, onCancel, onConfirm, open, t }) {
+  if (!open) return null
+  return jsx('div', {
+    className: 'fixed inset-0 z-50 grid place-items-center bg-background/90 p-4 backdrop-blur-sm',
+    role: 'presentation',
+    onMouseDown: event => !busy && event.target === event.currentTarget && onCancel(),
+    children: jsxs('section', {
+      'aria-labelledby': 'plugin-update-title',
+      'aria-modal': true,
+      className: 'w-full max-w-md rounded-lg border border-(--ui-stroke-secondary) bg-background p-4 shadow-xl',
+      role: 'dialog',
+      children: [
+        jsx('h2', {
+          className: 'text-base font-semibold',
+          id: 'plugin-update-title',
+          children: t('pluginUpdateTitle')
+        }),
+        jsx('p', {
+          className: 'mt-2 text-sm leading-6 text-(--ui-text-secondary)',
+          children: t('pluginUpdateBody')
+        }),
+        jsxs('footer', { className: 'mt-4 flex justify-end gap-2', children: [
+          jsx(Button, { disabled: busy, variant: 'ghost', onClick: onCancel, children: t('cancel') }),
+          jsx(Button, {
+            disabled: busy,
+            onClick: onConfirm,
+            children: busy ? t('working') : t('pluginUpdateConfirm')
+          })
+        ] })
+      ]
+    })
+  })
+}
+
 function Diagnostics({ rows, t }) {
   if (!rows.length) return null
   return jsx('section', {
@@ -491,7 +565,7 @@ function CodexSkills({ path, rows, t }) {
   })
 }
 
-function PageHeader({ counts, fetching, onRefresh, total, t }) {
+function PageHeader({ counts, fetching, onRefresh, onUpdate, total, t, updating }) {
   return jsxs('header', {
     className: 'border-b border-(--ui-stroke-secondary) px-4 py-4',
     children: [
@@ -500,15 +574,25 @@ function PageHeader({ counts, fetching, onRefresh, total, t }) {
           jsx('h1', { className: 'text-lg font-semibold', children: t('title') }),
           jsx('p', { className: 'mt-1 text-sm text-(--ui-text-secondary)', children: t('subtitle') })
         ] }),
-        jsx(Button, {
-          disabled: fetching,
-          variant: 'secondary',
-          onClick: onRefresh,
-          children: jsxs(Fragment, { children: [
-            jsx(Codicon, { name: 'refresh' }),
-            ` ${fetching ? t('refreshing') : t('refresh')}`
-          ] })
-        })
+        jsxs('div', { className: 'flex flex-wrap gap-2', children: [
+          jsx(Button, {
+            disabled: updating,
+            onClick: onUpdate,
+            children: jsxs(Fragment, { children: [
+              jsx(Codicon, { name: 'cloud-download' }),
+              ` ${updating ? t('working') : t('pluginUpdateButton')}`
+            ] })
+          }),
+          jsx(Button, {
+            disabled: fetching,
+            variant: 'secondary',
+            onClick: onRefresh,
+            children: jsxs(Fragment, { children: [
+              jsx(Codicon, { name: 'refresh' }),
+              ` ${fetching ? t('refreshing') : t('refresh')}`
+            ] })
+          })
+        ] })
       ] }),
       jsxs('div', { className: 'mt-4 flex flex-wrap gap-2', children: [
         jsx(Stat, { label: t('stats.total'), value: total }),
@@ -629,6 +713,7 @@ function SkillManagePage() {
   })
   const [selected, setSelected] = useState(null)
   const [pending, setPending] = useState(null)
+  const [pluginUpdateOpen, setPluginUpdateOpen] = useState(false)
   const inventory = useQuery({
     queryKey: QUERY_KEY,
     queryFn: () => pluginContext.rest('/inventory'),
@@ -641,6 +726,7 @@ function SkillManagePage() {
     () => { setPending(null); setSelected(null) },
     variables => setPending({ row: variables.row, action: variables.action })
   )
+  const pluginUpdate = usePluginUpdate(t, () => setPluginUpdateOpen(false))
   const data = inventory.data || {}
   const language = currentLanguage()
   const view = useInventoryView(data, { ...filters, language }, filters.showDeleted, t)
@@ -673,8 +759,10 @@ function SkillManagePage() {
         counts: view.installedCounts,
         fetching: inventory.isFetching,
         onRefresh: () => inventory.refetch(),
+        onUpdate: () => setPluginUpdateOpen(true),
         total: view.installed.length,
-        t
+        t,
+        updating: pluginUpdate.isPending
       }),
       jsx(ScrollArea, {
         className: 'min-h-0 flex-1',
@@ -726,6 +814,13 @@ function SkillManagePage() {
       t,
       onCancel: () => setPending(null),
       onConfirm: confirm => mutation.mutate({ ...pending, confirm })
+    }),
+    jsx(PluginUpdateOverlay, {
+      busy: pluginUpdate.isPending,
+      open: pluginUpdateOpen,
+      t,
+      onCancel: () => setPluginUpdateOpen(false),
+      onConfirm: () => pluginUpdate.mutate()
     })
   ] })
 }

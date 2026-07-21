@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 from .errors import SkillManagerError
+from .filesystem import copy_file_atomic
 
 
 class HermesRuntime:
@@ -50,3 +52,21 @@ class HermesRuntime:
         from hermes_cli.skills_hub import do_update
 
         do_update(name=name, console=None)
+
+    @staticmethod
+    def update_plugin(name: str, plugin_root: Path, desktop_entry: Path) -> dict[str, Any]:
+        """Update the checkout through Hermes, then hot-sync its Desktop entry."""
+
+        from hermes_cli.plugins_cmd import dashboard_update_user_plugin
+
+        result = dashboard_update_user_plugin(name)
+        if not result.get("ok"):
+            raise SkillManagerError(400, result.get("error", "插件更新失败"))
+
+        source = plugin_root / "desktop-plugins" / name / "plugin.js"
+        copy_file_atomic(source, desktop_entry)
+        return {
+            **result,
+            "desktopPath": str(desktop_entry),
+            "restartRequired": not bool(result.get("unchanged")),
+        }

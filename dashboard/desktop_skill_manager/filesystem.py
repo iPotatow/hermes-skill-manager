@@ -10,6 +10,28 @@ from pathlib import Path
 from .errors import SkillManagerError
 
 
+def copy_file_atomic(source: Path, target: Path) -> None:
+    """Replace one regular file without exposing a partially copied target."""
+
+    source = Path(source)
+    target = Path(target)
+    if source.is_symlink() or not source.is_file():
+        raise SkillManagerError(500, "更新包缺少有效的 Desktop 插件入口")
+    if target.exists() and target.is_dir():
+        raise SkillManagerError(500, "Desktop 插件入口被目录占用")
+
+    target.parent.mkdir(parents=True, exist_ok=True)
+    temporary = target.parent / f".{target.name}.{uuid.uuid4().hex}.tmp"
+    try:
+        shutil.copy2(source, temporary)
+        os.replace(temporary, target)
+    finally:
+        try:
+            temporary.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+
 def safe_descendant(root: Path, relative_path: str, detail: str) -> Path:
     """Return a non-symlink descendant of root or reject the path."""
 

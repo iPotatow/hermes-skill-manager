@@ -28,6 +28,15 @@ test('desktop plugin uses the scoped backend and shared React Query client', () 
   assert.match(source, /invalidateQueries\(\{ queryKey: QUERY_KEY \}\)/)
 })
 
+test('plugin update has a dedicated endpoint and an explicit second confirmation', () => {
+  assert.match(source, /function PluginUpdateOverlay/)
+  assert.match(source, /pluginContext\.rest\('\/plugin-update'/)
+  assert.match(source, /body:\s*\{ confirm: ID \}/)
+  assert.match(source, /onUpdate:\s*\(\) => setPluginUpdateOpen\(true\)/)
+  assert.match(source, /onConfirm:\s*\(\) => pluginUpdate\.mutate\(\)/)
+  assert.match(source, /pluginUpdateTitle: '更新技能管理插件？'/)
+})
+
 test('desktop action policy preserves every backend operation and confirmation boundary', () => {
   for (const action of ['delete', 'reset', 'restore', 'update', 'sync-codex']) {
     assert.match(source, new RegExp(action))
