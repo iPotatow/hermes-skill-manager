@@ -81,6 +81,17 @@ class BackendSkillContractTest(unittest.TestCase):
             asyncio.run(module.sync_skill_to_codex(action))
         self.assertEqual(raised.exception.status_code, 400)
 
+    def test_sync_to_codex_rejects_non_local_skills(self):
+        module = load_backend()
+        module._find_skill = lambda _source, _name: {
+            "name": "builtin-skill", "kind": "builtin", "source": "builtin", "installPath": "builtin-skill"
+        }
+        action = SimpleNamespace(source="builtin", name="builtin-skill", force=False, confirm="")
+        with self.assertRaises(module.HTTPException) as raised:
+            asyncio.run(module.sync_skill_to_codex(action))
+        self.assertEqual(raised.exception.status_code, 400)
+        self.assertIn("本地技能", raised.exception.detail)
+
     def test_sync_to_codex_rejects_unsafe_names_and_symlinks(self):
         module = load_backend()
         with tempfile.TemporaryDirectory() as directory:

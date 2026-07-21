@@ -13,7 +13,9 @@ const SOURCES = ['all', 'builtin', 'hub-installed', 'local']
 let pluginContext
 
 const sourceOf = row => row.kind || row.source || 'local'
-const actionsOf = row => row.status === 'deleted' ? (row.availableActions || []) : [...(row.availableActions || []), 'sync-codex']
+const actionsOf = row => sourceOf(row) === 'local' && row.status !== 'deleted'
+  ? [...(row.availableActions || []), 'sync-codex']
+  : (row.availableActions || [])
 const descriptionOf = (row, lang) => lang === 'zh'
   ? row.descriptionZh || row.description || row.descriptionEn || ''
   : row.descriptionEn || row.description || row.descriptionZh || ''
@@ -57,10 +59,12 @@ function DetailDialog({ language, onAction, onClose, row, t }) {
     [t('fields.path'), row.installPath || '-'],
     [t('fields.identifier'), row.identifier || '-'],
     [t('fields.installed'), row.installedAt || '-'],
-    [t('fields.updated'), row.updatedAt || '-'],
+    [t('fields.updated'), row.updatedAt || '-']
+  ]
+  if (sourceOf(row) === 'local') fields.push(
     [t('fields.codexStatus'), row.codexInstalled ? t('codex.installed') : t('codex.notInstalled')],
     [t('fields.codexPath'), row.codexPath || '-']
-  ]
+  )
   return jsx('div', { className: 'fixed inset-0 z-40 flex justify-end bg-background/90 backdrop-blur-sm', role: 'presentation', onMouseDown: event => event.target === event.currentTarget && onClose(), children:
     jsxs('section', { 'aria-label': t('details'), className: 'flex h-full w-full max-w-lg flex-col border-l border-(--ui-stroke-secondary) bg-background shadow-xl', role: 'dialog', children: [
       jsxs('header', { className: 'flex items-start justify-between gap-3 border-b border-(--ui-stroke-secondary) p-4', children: [
@@ -167,7 +171,7 @@ function SkillManagePage() {
           jsx('div', { className: 'text-xs text-(--ui-text-tertiary)', children: t('results', visible.length, rows.length) })
         ] }),
         visible.length ? jsx('section', { className: 'grid gap-2', children: visible.map(row => jsxs('article', { className: 'grid gap-3 rounded-md border border-(--ui-stroke-secondary) p-3 hover:border-(--ui-stroke-primary) md:grid-cols-[minmax(0,1fr)_auto]', children: [
-          jsxs('button', { className: 'min-w-0 text-left', type: 'button', onClick: () => setSelected(row), children: [jsx('strong', { className: 'block break-all text-sm font-medium', children: row.name }), jsx('p', { className: 'mt-1 line-clamp-2 break-words text-sm leading-5 text-(--ui-text-secondary)', children: descriptionOf(row, language) || t('noDescription') }), jsxs('div', { className: 'mt-2 flex flex-wrap gap-1.5', children: [jsx(ToneBadge, { tone: sourceOf(row), children: t(`sources.${sourceOf(row)}`) }), jsx(ToneBadge, { tone: row.status, children: t(`statuses.${row.status}`) }), row.codexInstalled ? jsx(ToneBadge, { tone: 'builtin', children: t('codex.installed') }) : null, row.category ? jsx(Badge, { className: 'max-w-48 truncate font-normal', children: row.category }) : null] })] }),
+          jsxs('button', { className: 'min-w-0 text-left', type: 'button', onClick: () => setSelected(row), children: [jsx('strong', { className: 'block break-all text-sm font-medium', children: row.name }), jsx('p', { className: 'mt-1 line-clamp-2 break-words text-sm leading-5 text-(--ui-text-secondary)', children: descriptionOf(row, language) || t('noDescription') }), jsxs('div', { className: 'mt-2 flex flex-wrap gap-1.5', children: [jsx(ToneBadge, { tone: sourceOf(row), children: t(`sources.${sourceOf(row)}`) }), jsx(ToneBadge, { tone: row.status, children: t(`statuses.${row.status}`) }), sourceOf(row) === 'local' && row.codexInstalled ? jsx(ToneBadge, { tone: 'builtin', children: t('codex.installed') }) : null, row.category ? jsx(Badge, { className: 'max-w-48 truncate font-normal', children: row.category }) : null] })] }),
           actionsOf(row).length ? jsx('div', { className: 'flex flex-wrap items-center gap-2 md:justify-end', children: actionsOf(row).map(action => jsx(Button, { disabled: mutation.isPending, size: 'sm', variant: action === 'delete' ? 'destructive' : action === 'sync-codex' ? 'default' : 'secondary', onClick: () => beginAction(row, action), children: t(`actions.${action}`) }, action)) }) : null
         ] }, `${sourceOf(row)}:${row.name}`)) }) : jsx(EmptyState, { title: t('emptyTitle'), description: t('emptyBody') }),
         jsx(History, { history: data.history || [], t })

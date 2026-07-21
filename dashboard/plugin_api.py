@@ -289,7 +289,7 @@ def _validate_sync_source(source: Path) -> None:
 
 
 def _codex_fields(row: Dict[str, Any]) -> Dict[str, Any]:
-    if row.get("status") == "deleted":
+    if (row.get("kind") or row.get("source")) != "local" or row.get("status") == "deleted":
         return {"codexInstalled": False, "codexPath": ""}
     try:
         target = _safe_codex_target(str(row.get("name", "")))
@@ -604,6 +604,8 @@ async def update_skill(action: SkillAction) -> Dict[str, Any]:
 @router.post("/sync-codex")
 async def sync_skill_to_codex(action: SkillAction) -> Dict[str, Any]:
     row = _find_skill(action.source, action.name)
+    if (row.get("kind") or row.get("source")) != "local":
+        raise HTTPException(status_code=400, detail="只有 Hermes 本地技能可以同步到 Codex")
     source = _safe_target(row["installPath"])
     target = _safe_codex_target(row["name"], create_root=True)
     if action.force:

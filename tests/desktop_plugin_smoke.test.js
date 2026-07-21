@@ -21,6 +21,7 @@ test('desktop plugin registers a route, navigation, palette, and backend calls',
   for (const action of ['delete', 'reset', 'restore', 'update', 'sync-codex']) assert.match(source, new RegExp(`${action}`))
   assert.match(source, /codexInstalled/)
   assert.match(source, /force: action === 'sync-codex'/)
+  assert.match(source, /sourceOf\(row\) === 'local'/)
 })
 
 test('desktop plugin avoids hard-coded color literals', () => {
