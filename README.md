@@ -2,7 +2,7 @@
 
 [English](README_EN.md) | 简体中文
 
-`desktop-skill-manager` 是独立的 Hermes Desktop 原生插件，用于查看和维护内建、Skills Hub 与本地技能，并可将 Hermes 本地技能同步到 Codex。它不包含 Hermes Dashboard 页面，也不依赖 Dashboard 插件仓库。
+`desktop-skill-manager` 是独立的 Hermes Desktop 原生插件，用于查看和维护内建、Skills Hub 与本地技能，并可将 Hermes 社区或本地技能同步到 Codex。它不包含 Hermes Dashboard 页面，也不依赖 Dashboard 插件仓库。
 
 ## 功能
 
@@ -11,7 +11,8 @@
 - 技能详情、最近操作、诊断与自动刷新
 - 内建技能重置、删除、恢复；Hub 技能重置、更新、删除；本地技能删除
 - 删除和重置要求输入完整技能名确认
-- 仅本地技能显示同步按钮，可一键同步到 `$CODEX_HOME/skills/<技能名>`；覆盖已有 Codex 技能时要求输入完整技能名确认
+- 社区和本地技能显示“同步”按钮，可一键同步到 `$CODEX_HOME/skills/<技能名>`；内建技能不显示该按钮，覆盖已有 Codex 技能时要求输入完整技能名确认
+- 单独列出 `$CODEX_HOME/skills` 下已发现的 Codex 用户技能与系统技能
 - 中英文界面、响应式布局及 Hermes Desktop 主题适配
 
 ## 安装
@@ -60,4 +61,4 @@ node --test tests/desktop_plugin_smoke.test.js
 python3 -m unittest discover -s tests -v
 ```
 
-插件 ID：`desktop-skill-manager` · Desktop 路径：`/desktop-skill-manager` · 版本：`1.1.1`
+插件 ID：`desktop-skill-manager` · Desktop 路径：`/desktop-skill-manager` · 版本：`1.2.0`

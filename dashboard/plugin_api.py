@@ -83,6 +83,52 @@ def _codex_skills_dir() -> Path:
     return _codex_home() / "skills"
 
 
+def _frontmatter_value(content: str, key: str) -> str:
+    lines = content.splitlines()
+    if not lines or lines[0].strip() != "---":
+        return ""
+    for line in lines[1:]:
+        if line.strip() == "---":
+            break
+        if line.startswith(f"{key}:"):
+            value = line.split(":", 1)[1].strip()
+            if len(value) >= 2 and value[0] == value[-1] and value[0] in {'"', "'"}:
+                value = value[1:-1]
+            return value
+    return ""
+
+
+def _codex_inventory(diagnostics: Optional[List[Dict[str, str]]] = None) -> List[Dict[str, Any]]:
+    root = _codex_skills_dir().expanduser()
+    if not root.exists():
+        return []
+    root = root.resolve()
+    rows: List[Dict[str, Any]] = []
+    for skill_md in sorted(root.rglob("SKILL.md")):
+        try:
+            if skill_md.is_symlink() or not skill_md.is_file():
+                continue
+            resolved = skill_md.resolve()
+            if not resolved.is_relative_to(root):
+                continue
+            relative_dir = resolved.parent.relative_to(root)
+            content = resolved.read_text(encoding="utf-8")
+            name = _frontmatter_value(content, "name") or resolved.parent.name
+            description = _frontmatter_value(content, "description")
+            rows.append({
+                "name": name,
+                "description": description[:500],
+                "kind": "system" if relative_dir.parts and relative_dir.parts[0] == ".system" else "user",
+                "path": str(resolved.parent),
+                "relativePath": relative_dir.as_posix(),
+                "updatedAt": datetime.fromtimestamp(resolved.stat().st_mtime, timezone.utc).isoformat(),
+            })
+        except Exception as exc:
+            if diagnostics is not None:
+                diagnostics.append({"component": "codex-skill", "message": str(exc) or exc.__class__.__name__})
+    return sorted(rows, key=lambda row: (row["kind"], str(row["name"]).lower(), row["relativePath"]))
+
+
 def _state_path() -> Path:
     """Keep mutable data outside the possibly read-only plugin installation."""
     return _home() / "state" / "plugins" / "desktop-skill-manager.json"
@@ -289,7 +335,7 @@ def _validate_sync_source(source: Path) -> None:
 
 
 def _codex_fields(row: Dict[str, Any]) -> Dict[str, Any]:
-    if (row.get("kind") or row.get("source")) != "local" or row.get("status") == "deleted":
+    if (row.get("kind") or row.get("source")) not in {"hub-installed", "local"} or row.get("status") == "deleted":
         return {"codexInstalled": False, "codexPath": ""}
     try:
         target = _safe_codex_target(str(row.get("name", "")))
@@ -483,6 +529,7 @@ async def inventory() -> Dict[str, Any]:
     rows = _inventory_rows(bundled_names, diagnostics)
     missing_builtin = _missing_builtin_rows(rows, bundled)
     state = _load_state()
+    codex_skills = _codex_inventory(diagnostics)
     counts: Dict[str, int] = {}
     enabled_count = 0
     disabled_count = 0
@@ -505,6 +552,8 @@ async def inventory() -> Dict[str, Any]:
         "disabledCount": disabled_count,
         "categories": categories,
         "history": state.get("history", [])[:5],
+        "codexSkills": codex_skills,
+        "codexSkillCount": len(codex_skills),
         "diagnostics": diagnostics,
         "meta": {
             "home": str(_home()),
@@ -604,8 +653,8 @@ async def update_skill(action: SkillAction) -> Dict[str, Any]:
 @router.post("/sync-codex")
 async def sync_skill_to_codex(action: SkillAction) -> Dict[str, Any]:
     row = _find_skill(action.source, action.name)
-    if (row.get("kind") or row.get("source")) != "local":
-        raise HTTPException(status_code=400, detail="只有 Hermes 本地技能可以同步到 Codex")
+    if (row.get("kind") or row.get("source")) not in {"hub-installed", "local"}:
+        raise HTTPException(status_code=400, detail="只有 Hermes 社区或本地技能可以同步到 Codex")
     source = _safe_target(row["installPath"])
     target = _safe_codex_target(row["name"], create_root=True)
     if action.force:

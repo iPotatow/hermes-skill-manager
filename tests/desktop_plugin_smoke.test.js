@@ -21,7 +21,11 @@ test('desktop plugin registers a route, navigation, palette, and backend calls',
   for (const action of ['delete', 'reset', 'restore', 'update', 'sync-codex']) assert.match(source, new RegExp(`${action}`))
   assert.match(source, /codexInstalled/)
   assert.match(source, /force: action === 'sync-codex'/)
-  assert.match(source, /sourceOf\(row\) === 'local'/)
+  assert.match(source, /\['hub-installed', 'local'\]\.includes\(sourceOf\(row\)\)/)
+  assert.match(source, /function CodexSkills/)
+  assert.match(source, /data\.codexSkills/)
+  assert.match(source, /'sync-codex': 'Sync'/)
+  assert.match(source, /'sync-codex': '同步'/)
 })
 
 test('desktop plugin avoids hard-coded color literals', () => {

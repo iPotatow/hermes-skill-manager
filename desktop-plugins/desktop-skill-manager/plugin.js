@@ -13,7 +13,8 @@ const SOURCES = ['all', 'builtin', 'hub-installed', 'local']
 let pluginContext
 
 const sourceOf = row => row.kind || row.source || 'local'
-const actionsOf = row => sourceOf(row) === 'local' && row.status !== 'deleted'
+const canSync = row => ['hub-installed', 'local'].includes(sourceOf(row)) && row.status !== 'deleted'
+const actionsOf = row => canSync(row)
   ? [...(row.availableActions || []), 'sync-codex']
   : (row.availableActions || [])
 const descriptionOf = (row, lang) => lang === 'zh'
@@ -61,7 +62,7 @@ function DetailDialog({ language, onAction, onClose, row, t }) {
     [t('fields.installed'), row.installedAt || '-'],
     [t('fields.updated'), row.updatedAt || '-']
   ]
-  if (sourceOf(row) === 'local') fields.push(
+  if (canSync(row)) fields.push(
     [t('fields.codexStatus'), row.codexInstalled ? t('codex.installed') : t('codex.notInstalled')],
     [t('fields.codexPath'), row.codexPath || '-']
   )
@@ -105,6 +106,23 @@ function History({ history, t }) {
     jsx('div', { className: 'grid gap-2 border-t border-(--ui-stroke-secondary) p-3', children: history.slice(0, 5).map((item, index) => jsxs('div', { className: 'grid gap-1 rounded border border-(--ui-stroke-secondary) px-3 py-2 text-sm sm:grid-cols-[6rem_minmax(0,1fr)_10rem]', children: [
       jsx('span', { children: t(`actions.${item.action}`) }), jsx('strong', { className: 'min-w-0 break-all font-medium', children: item.name || '-' }), jsx('time', { className: 'text-(--ui-text-tertiary)', children: item.at ? new Date(item.at).toLocaleString() : '-' })
     ] }, `${item.at || index}:${item.name || ''}`)) })
+  ] })
+}
+
+function CodexSkills({ language, path, rows }) {
+  const text = language === 'zh'
+    ? { title: 'Codex 技能列表', count: value => `${value} 个技能`, empty: '尚未发现 Codex 技能', system: '系统', user: '用户', noDescription: '无简介' }
+    : { title: 'Codex skills', count: value => `${value} skills`, empty: 'No Codex skills found', system: 'System', user: 'User', noDescription: 'No description' }
+  return jsxs('details', { className: 'rounded-md border border-(--ui-stroke-secondary)', open: true, children: [
+    jsxs('summary', { className: 'flex cursor-pointer items-center justify-between gap-3 px-3 py-2 text-sm font-medium', children: [jsx('span', { children: text.title }), jsx('span', { className: 'text-xs font-normal text-(--ui-text-tertiary)', children: text.count(rows.length) })] }),
+    jsxs('div', { className: 'space-y-3 border-t border-(--ui-stroke-secondary) p-3', children: [
+      jsx('code', { className: 'block break-all text-xs text-(--ui-text-tertiary)', children: path || '-' }),
+      rows.length ? jsx('div', { className: 'grid gap-2 md:grid-cols-2', children: rows.map(row => jsxs('article', { className: 'min-w-0 rounded border border-(--ui-stroke-secondary) p-3', children: [
+        jsxs('div', { className: 'flex min-w-0 items-center justify-between gap-2', children: [jsx('strong', { className: 'min-w-0 break-all text-sm font-medium', children: row.name }), jsx(Badge, { className: 'shrink-0 font-normal', children: row.kind === 'system' ? text.system : text.user })] }),
+        jsx('p', { className: 'mt-1 line-clamp-2 break-words text-sm leading-5 text-(--ui-text-secondary)', children: row.description || text.noDescription }),
+        jsx('code', { className: 'mt-2 block break-all text-xs text-(--ui-text-tertiary)', children: row.relativePath })
+      ] }, row.relativePath)) }) : jsx('p', { className: 'py-4 text-center text-sm text-(--ui-text-tertiary)', children: text.empty })
+    ] })
   ] })
 }
 
@@ -171,9 +189,10 @@ function SkillManagePage() {
           jsx('div', { className: 'text-xs text-(--ui-text-tertiary)', children: t('results', visible.length, rows.length) })
         ] }),
         visible.length ? jsx('section', { className: 'grid gap-2', children: visible.map(row => jsxs('article', { className: 'grid gap-3 rounded-md border border-(--ui-stroke-secondary) p-3 hover:border-(--ui-stroke-primary) md:grid-cols-[minmax(0,1fr)_auto]', children: [
-          jsxs('button', { className: 'min-w-0 text-left', type: 'button', onClick: () => setSelected(row), children: [jsx('strong', { className: 'block break-all text-sm font-medium', children: row.name }), jsx('p', { className: 'mt-1 line-clamp-2 break-words text-sm leading-5 text-(--ui-text-secondary)', children: descriptionOf(row, language) || t('noDescription') }), jsxs('div', { className: 'mt-2 flex flex-wrap gap-1.5', children: [jsx(ToneBadge, { tone: sourceOf(row), children: t(`sources.${sourceOf(row)}`) }), jsx(ToneBadge, { tone: row.status, children: t(`statuses.${row.status}`) }), sourceOf(row) === 'local' && row.codexInstalled ? jsx(ToneBadge, { tone: 'builtin', children: t('codex.installed') }) : null, row.category ? jsx(Badge, { className: 'max-w-48 truncate font-normal', children: row.category }) : null] })] }),
+          jsxs('button', { className: 'min-w-0 text-left', type: 'button', onClick: () => setSelected(row), children: [jsx('strong', { className: 'block break-all text-sm font-medium', children: row.name }), jsx('p', { className: 'mt-1 line-clamp-2 break-words text-sm leading-5 text-(--ui-text-secondary)', children: descriptionOf(row, language) || t('noDescription') }), jsxs('div', { className: 'mt-2 flex flex-wrap gap-1.5', children: [jsx(ToneBadge, { tone: sourceOf(row), children: t(`sources.${sourceOf(row)}`) }), jsx(ToneBadge, { tone: row.status, children: t(`statuses.${row.status}`) }), canSync(row) && row.codexInstalled ? jsx(ToneBadge, { tone: 'builtin', children: t('codex.installed') }) : null, row.category ? jsx(Badge, { className: 'max-w-48 truncate font-normal', children: row.category }) : null] })] }),
           actionsOf(row).length ? jsx('div', { className: 'flex flex-wrap items-center gap-2 md:justify-end', children: actionsOf(row).map(action => jsx(Button, { disabled: mutation.isPending, size: 'sm', variant: action === 'delete' ? 'destructive' : action === 'sync-codex' ? 'default' : 'secondary', onClick: () => beginAction(row, action), children: t(`actions.${action}`) }, action)) }) : null
         ] }, `${sourceOf(row)}:${row.name}`)) }) : jsx(EmptyState, { title: t('emptyTitle'), description: t('emptyBody') }),
+        jsx(CodexSkills, { language, path: data.meta?.codexSkillsDir, rows: Array.isArray(data.codexSkills) ? data.codexSkills : [] }),
         jsx(History, { history: data.history || [], t })
       ] }) })
     ] }),
@@ -190,11 +209,11 @@ export default {
     ctx.i18n.register({
       en: {
         title: 'Hermes & Codex Skills', subtitle: 'Manage Hermes skills and sync them into Codex.', search: 'Search', searchPlaceholder: 'Search skills, descriptions, sources, statuses, or paths', refresh: 'Refresh', refreshing: 'Refreshing', retry: 'Retry', showDeleted: 'Show deleted built-ins', results: (shown, total) => `${shown} of ${total}`, allCategories: 'All categories', root: '(root)', details: 'Skill details', close: 'Close', noDescription: 'No description', recent: 'Recent actions', partial: 'Some skill data could not be loaded.', loadError: 'Skill inventory unavailable', unknownError: 'Unknown error', emptyTitle: 'No matching skills', emptyBody: 'Adjust or clear the active filters.', cancel: 'Cancel', confirm: 'Confirm', working: 'Working…', confirmPlaceholder: 'Type the exact skill name', success: (action, name) => `${action}: ${name}`, nav: 'Skills', open: 'Open Skill Manage',
-        stats: { total: 'Total', builtin: 'Built-in', community: 'Community', local: 'Local' }, sources: { all: 'All', builtin: 'Built-in', 'hub-installed': 'Community', local: 'Local' }, statuses: { all: 'All statuses', enabled: 'Enabled', disabled: 'Disabled', deleted: 'Deleted' }, trust: { builtin: 'Built-in', official: 'Official', community: 'Community', local: 'Local' }, codex: { installed: 'In Codex', notInstalled: 'Not in Codex' }, fields: { category: 'Category', source: 'Source', trust: 'Trust', status: 'Status', path: 'Hermes path', identifier: 'Identifier', installed: 'Installed', updated: 'Updated', codexStatus: 'Codex status', codexPath: 'Codex path' }, actions: { delete: 'Delete', reset: 'Reset', update: 'Update', restore: 'Restore', 'sync-codex': 'Sync to Codex' }, confirmTitle: { delete: 'Delete skill', reset: 'Reset skill', 'sync-codex': 'Replace Codex skill' }, confirmBody: { delete: name => `This permanently removes the local files for ${name}. Type the exact skill name to continue.`, reset: name => `This replaces the local contents of ${name} with its source version. Type the exact skill name to continue.`, 'sync-codex': name => `Codex already has ${name}. Type the exact skill name to replace it with the Hermes copy.` }
+        stats: { total: 'Total', builtin: 'Built-in', community: 'Community', local: 'Local' }, sources: { all: 'All', builtin: 'Built-in', 'hub-installed': 'Community', local: 'Local' }, statuses: { all: 'All statuses', enabled: 'Enabled', disabled: 'Disabled', deleted: 'Deleted' }, trust: { builtin: 'Built-in', official: 'Official', community: 'Community', local: 'Local' }, codex: { installed: 'In Codex', notInstalled: 'Not in Codex' }, fields: { category: 'Category', source: 'Source', trust: 'Trust', status: 'Status', path: 'Hermes path', identifier: 'Identifier', installed: 'Installed', updated: 'Updated', codexStatus: 'Codex status', codexPath: 'Codex path' }, actions: { delete: 'Delete', reset: 'Reset', update: 'Update', restore: 'Restore', 'sync-codex': 'Sync' }, confirmTitle: { delete: 'Delete skill', reset: 'Reset skill', 'sync-codex': 'Replace Codex skill' }, confirmBody: { delete: name => `This permanently removes the local files for ${name}. Type the exact skill name to continue.`, reset: name => `This replaces the local contents of ${name} with its source version. Type the exact skill name to continue.`, 'sync-codex': name => `Codex already has ${name}. Type the exact skill name to replace it with the Hermes copy.` }
       },
       zh: {
         title: 'Hermes 与 Codex 技能管理', subtitle: '管理 Hermes 技能，并将它们同步到 Codex。', search: '搜索', searchPlaceholder: '搜索技能、简介、来源、状态或路径', refresh: '刷新', refreshing: '刷新中', retry: '重试', showDeleted: '显示已删除内建', results: (shown, total) => `显示 ${shown} / ${total}`, allCategories: '全部分类', root: '（根目录）', details: '技能详情', close: '关闭', noDescription: '无简介', recent: '最近操作', partial: '部分技能数据加载失败。', loadError: '无法加载技能清单', unknownError: '未知错误', emptyTitle: '没有匹配的技能', emptyBody: '请调整或清除当前筛选条件。', cancel: '取消', confirm: '确认', working: '处理中…', confirmPlaceholder: '输入完整技能名', success: (action, name) => `${action}：${name}`, nav: '技能', open: '打开技能管理',
-        stats: { total: '总数', builtin: '内建', community: '社区', local: '本地' }, sources: { all: '全部', builtin: '内建', 'hub-installed': '社区', local: '本地' }, statuses: { all: '全部状态', enabled: '启用', disabled: '停用', deleted: '已删除' }, trust: { builtin: '内建', official: '官方', community: '社区', local: '本地' }, codex: { installed: '已在 Codex', notInstalled: '未在 Codex' }, fields: { category: '分类', source: '来源', trust: '信任', status: '状态', path: 'Hermes 路径', identifier: '标识', installed: '安装时间', updated: '更新时间', codexStatus: 'Codex 状态', codexPath: 'Codex 路径' }, actions: { delete: '删除', reset: '重置', update: '更新', restore: '恢复', 'sync-codex': '同步到 Codex' }, confirmTitle: { delete: '删除技能', reset: '重置技能', 'sync-codex': '覆盖 Codex 技能' }, confirmBody: { delete: name => `这会永久删除 ${name} 的本地文件。请输入完整技能名继续。`, reset: name => `这会用来源版本覆盖 ${name} 的本地内容。请输入完整技能名继续。`, 'sync-codex': name => `Codex 中已存在 ${name}。请输入完整技能名，用 Hermes 副本覆盖它。` }
+        stats: { total: '总数', builtin: '内建', community: '社区', local: '本地' }, sources: { all: '全部', builtin: '内建', 'hub-installed': '社区', local: '本地' }, statuses: { all: '全部状态', enabled: '启用', disabled: '停用', deleted: '已删除' }, trust: { builtin: '内建', official: '官方', community: '社区', local: '本地' }, codex: { installed: '已在 Codex', notInstalled: '未在 Codex' }, fields: { category: '分类', source: '来源', trust: '信任', status: '状态', path: 'Hermes 路径', identifier: '标识', installed: '安装时间', updated: '更新时间', codexStatus: 'Codex 状态', codexPath: 'Codex 路径' }, actions: { delete: '删除', reset: '重置', update: '更新', restore: '恢复', 'sync-codex': '同步' }, confirmTitle: { delete: '删除技能', reset: '重置技能', 'sync-codex': '覆盖 Codex 技能' }, confirmBody: { delete: name => `这会永久删除 ${name} 的本地文件。请输入完整技能名继续。`, reset: name => `这会用来源版本覆盖 ${name} 的本地内容。请输入完整技能名继续。`, 'sync-codex': name => `Codex 中已存在 ${name}。请输入完整技能名，用 Hermes 副本覆盖它。` }
       }
     })
     ctx.register({ id: 'route', area: ROUTES_AREA, data: { path: ROUTE }, render: () => jsx(SkillManagePage, {}) })

@@ -69,6 +69,53 @@ class BackendSkillContractTest(unittest.TestCase):
             self.assertFalse(list(target.parent.glob(".*.tmp")))
             self.assertFalse(list(target.parent.glob(".*.bak")))
 
+    def test_sync_to_codex_accepts_community_skills(self):
+        module = load_backend()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "hermes" / "community-skill"
+            target = root / "codex" / "skills" / "community-skill"
+            source.mkdir(parents=True)
+            (source / "SKILL.md").write_text("---\nname: community-skill\n---\n", encoding="utf-8")
+            module._find_skill = lambda _source, _name: {
+                "name": "community-skill", "kind": "hub-installed", "source": "hub", "installPath": "community-skill"
+            }
+            module._safe_target = lambda _path: source
+            module._safe_codex_target = lambda _name, create_root=False: target
+            module._record_history = lambda _event: None
+
+            result = asyncio.run(module.sync_skill_to_codex(SimpleNamespace(
+                source="hub-installed", name="community-skill", force=False, confirm=""
+            )))
+
+            self.assertTrue(result["ok"])
+            self.assertTrue((target / "SKILL.md").is_file())
+
+    def test_codex_inventory_lists_user_and_system_skills(self):
+        module = load_backend()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "skills"
+            user_skill = root / "my-skill"
+            system_skill = root / ".system" / "built-in-helper"
+            user_skill.mkdir(parents=True)
+            system_skill.mkdir(parents=True)
+            (user_skill / "SKILL.md").write_text(
+                '---\nname: "My Skill"\ndescription: "A user skill"\n---\n', encoding="utf-8"
+            )
+            (system_skill / "SKILL.md").write_text(
+                "---\nname: built-in-helper\ndescription: A system skill\n---\n", encoding="utf-8"
+            )
+            module._codex_skills_dir = lambda: root
+
+            rows = module._codex_inventory([])
+
+            self.assertEqual({row["name"] for row in rows}, {"My Skill", "built-in-helper"})
+            by_name = {row["name"]: row for row in rows}
+            self.assertEqual(by_name["My Skill"]["kind"], "user")
+            self.assertEqual(by_name["My Skill"]["description"], "A user skill")
+            self.assertEqual(by_name["built-in-helper"]["kind"], "system")
+            self.assertEqual(by_name["built-in-helper"]["relativePath"], ".system/built-in-helper")
+
     def test_sync_to_codex_force_requires_exact_name_confirmation(self):
         module = load_backend()
         module._find_skill = lambda _source, _name: {
