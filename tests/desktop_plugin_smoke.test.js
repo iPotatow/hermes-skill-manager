@@ -68,6 +68,9 @@ test('descriptions sit below skill names and stay on one line', () => {
 test('main table columns are skill category source type and actions', () => {
   assert.match(source, /skill: '技能', category: '分类', source: '来源', type: '类型'/)
   assert.match(source, /table\.skill[\s\S]*table\.category[\s\S]*table\.source[\s\S]*table\.type[\s\S]*table\.actions/)
+  assert.match(source, /w-\[29rem\][^\n]*table\.skill/)
+  assert.match(source, /w-\[6rem\][^\n]*table\.source/)
+  assert.match(source, /w-\[5rem\][^\n]*table\.type/)
   assert.doesNotMatch(source, /children:\s*t\('table\.(?:description|status|codex)'\)/)
   assert.match(source, /const rawSourceOf = row => row\.rawSource \|\| row\.source \|\| sourceOf\(row\)/)
 })

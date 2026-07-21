@@ -750,10 +750,10 @@ function SkillTable({ busy, language, onAction, onSelect, rows, t }) {
         jsx('thead', {
           className: 'bg-(--ui-bg-secondary) text-left text-xs text-(--ui-text-tertiary)',
           children: jsx('tr', { children: [
-            jsx('th', { className: 'w-[25rem] px-3 py-2 font-medium', children: t('table.skill') }),
+            jsx('th', { className: 'w-[29rem] px-3 py-2 font-medium', children: t('table.skill') }),
             jsx('th', { className: 'w-[9rem] px-3 py-2 font-medium', children: t('table.category') }),
-            jsx('th', { className: 'w-[8rem] px-3 py-2 font-medium', children: t('table.source') }),
-            jsx('th', { className: 'w-[7rem] px-3 py-2 font-medium', children: t('table.type') }),
+            jsx('th', { className: 'w-[6rem] px-3 py-2 font-medium', children: t('table.source') }),
+            jsx('th', { className: 'w-[5rem] px-3 py-2 font-medium', children: t('table.type') }),
             jsx('th', { className: 'w-[15rem] px-3 py-2 text-right font-medium', children: t('table.actions') })
           ] })
         }),

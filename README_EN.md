@@ -89,4 +89,4 @@ node --test tests/desktop_plugin_smoke.test.js
 python3 -m unittest discover -s tests -v
 ```
 
-Plugin ID: `skill-manager` · Desktop route: `/skill-manager` · Version: `1.5.5`
+Plugin ID: `skill-manager` · Desktop route: `/skill-manager` · Version: `1.5.6`
