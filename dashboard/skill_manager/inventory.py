@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-import json
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
+from .catalog import BuiltinCatalog, shared_builtin_catalog
 from .errors import SkillManagerError
 from .filesystem import safe_descendant, safe_named_descendant
 from .paths import SkillPaths
@@ -37,11 +37,15 @@ def capture(
 class SkillInventory:
     """Discover skill sources and normalize them into one stable contract."""
 
-    def __init__(self, paths: SkillPaths, catalog_path: Path | None = None):
+    def __init__(
+        self,
+        paths: SkillPaths,
+        catalog_path: Path | None = None,
+        catalog: BuiltinCatalog | None = None,
+    ):
         self.paths = paths
         self.catalog_path = Path(catalog_path or paths.builtin_catalog)
-        self._catalog_mtime = -1
-        self._catalog_data: dict[str, dict[str, str]] = {}
+        self.catalog = catalog or shared_builtin_catalog(self.catalog_path)
 
     @staticmethod
     def _frontmatter_value(content: str, key: str) -> str:
@@ -59,20 +63,7 @@ class SkillInventory:
         return ""
 
     def _load_catalog(self) -> dict[str, dict[str, str]]:
-        try:
-            modified = self.catalog_path.stat().st_mtime_ns
-        except OSError:
-            return {}
-        if modified == self._catalog_mtime:
-            return self._catalog_data
-        try:
-            data = json.loads(self.catalog_path.read_text(encoding="utf-8"))
-        except Exception:
-            data = {}
-        skills = data.get("skills", {}) if isinstance(data, dict) else {}
-        self._catalog_data = skills if isinstance(skills, dict) else {}
-        self._catalog_mtime = modified
-        return self._catalog_data
+        return self.catalog.snapshot()
 
     def _catalog_description(self, name: str, key: str, fallback: str = "") -> str:
         value = self._load_catalog().get(name, {}).get(key)
@@ -295,7 +286,6 @@ class SkillInventory:
         description_zh = description_en
         if classification["kind"] == "builtin":
             description_zh = self._catalog_description(name, "descriptionZh", description_en)
-            description_en = self._catalog_description(name, "descriptionEn", description_en)
         source = classification["source"]
         row = {
             "name": name,
@@ -348,7 +338,7 @@ class SkillInventory:
                 category = ""
             disk_description = self._description_from_disk(skill_dir)
             description_zh = self._catalog_description(name, "descriptionZh", disk_description)
-            description_en = self._catalog_description(name, "descriptionEn", disk_description)
+            description_en = disk_description
             row = {
                 "name": name,
                 "category": category,

@@ -10,6 +10,7 @@
 - Dashboard 清单仅挂载后端 API，不注册 Dashboard 侧边栏
 - Hermes 与 Codex 技能均使用紧凑表格展示，不使用技能卡片
 - 按来源、分类和状态筛选，支持全文搜索
+- 内建技能中文简介取自 [Hermes 官方中文技能目录](https://hermes-agent.nousresearch.com/docs/zh-Hans/reference/skills-catalog)，后台定时刷新并保留离线快照
 - 技能详情、最近操作、诊断与自动刷新
 - 页面顶部提供插件更新按钮，点击后需再次确认；更新成功会自动热加载 Desktop 入口
 - 内建技能重置、删除、恢复；Hub 技能重置、更新、删除；本地技能删除
@@ -66,7 +67,8 @@ desktop-plugins/skill-manager/plugin.js          # 原生 Desktop UI
 dashboard/manifest.json                         # 后端挂载声明（不注册 Dashboard 页面）
 dashboard/plugin_api.py                         # 薄 FastAPI 适配器
 dashboard/skill_manager/                        # 可测试的技能管理领域与基础设施
-dashboard/data/builtin_catalog.json             # 内建技能描述
+dashboard/data/builtin_catalog.json             # 官方中文内建技能目录离线快照
+scripts/sync_builtin_catalog.py                 # 官方目录快照同步工具
 tests/                                          # Desktop 与后端测试
 ```
 
@@ -86,4 +88,4 @@ node --test tests/desktop_plugin_smoke.test.js
 python3 -m unittest discover -s tests -v
 ```
 
-插件 ID：`skill-manager` · Desktop 路径：`/skill-manager` · 版本：`1.5.1`
+插件 ID：`skill-manager` · Desktop 路径：`/skill-manager` · 版本：`1.5.2`

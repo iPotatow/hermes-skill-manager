@@ -10,6 +10,7 @@ English | [简体中文](README.md)
 - The Dashboard manifest mounts backend APIs without adding a Dashboard sidebar item
 - Compact tables for Hermes and Codex skills, with no skill-card layout
 - Full-text search with source, category, and status filters
+- Built-in Chinese descriptions come from the [official Hermes Chinese skills catalog](https://hermes-agent.nousresearch.com/docs/zh-Hans/reference/skills-catalog), with background refresh and an offline snapshot
 - Skill details, recent actions, diagnostics, and automatic refresh
 - A page-level plugin update button with an explicit second confirmation and automatic Desktop entry hot reload
 - Built-in reset/delete/restore; Hub reset/update/delete; local delete
@@ -66,7 +67,8 @@ desktop-plugins/skill-manager/plugin.js          # native Desktop UI
 dashboard/manifest.json                         # backend mount only; no Dashboard page
 dashboard/plugin_api.py                         # thin FastAPI adapter
 dashboard/skill_manager/                        # testable domain and infrastructure
-dashboard/data/builtin_catalog.json             # built-in descriptions
+dashboard/data/builtin_catalog.json             # offline snapshot of official Chinese descriptions
+scripts/sync_builtin_catalog.py                 # official catalog snapshot sync tool
 tests/                                          # Desktop and backend tests
 ```
 
@@ -86,4 +88,4 @@ node --test tests/desktop_plugin_smoke.test.js
 python3 -m unittest discover -s tests -v
 ```
 
-Plugin ID: `skill-manager` · Desktop route: `/skill-manager` · Version: `1.5.1`
+Plugin ID: `skill-manager` · Desktop route: `/skill-manager` · Version: `1.5.2`

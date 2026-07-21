@@ -17,6 +17,11 @@ BACKEND = DASHBOARD / "plugin_api.py"
 if str(DASHBOARD) not in sys.path:
     sys.path.insert(0, str(DASHBOARD))
 
+from skill_manager.catalog import (
+    OFFICIAL_CATALOG_URL,
+    BuiltinCatalog,
+    parse_official_catalog,
+)
 from skill_manager.errors import SkillManagerError
 from skill_manager.filesystem import (
     copy_file_atomic,
@@ -116,6 +121,65 @@ class InventoryStub:
 
 
 class BackendSkillContractTest(unittest.TestCase):
+    def test_official_chinese_catalog_parser_reads_rendered_skill_tables(self):
+        content = """
+        <table><thead><tr><th>技能</th><th>描述</th><th>路径</th></tr></thead>
+        <tbody><tr>
+          <td><a href="/skill"><code>apple-notes</code></a></td>
+          <td>通过 <code>memo</code> CLI 管理 Apple Notes：创建、搜索、编辑。</td>
+          <td><code>apple/apple-notes</code></td>
+        </tr></tbody></table>
+        """
+
+        self.assertEqual(parse_official_catalog(content), {
+            "apple-notes": {
+                "descriptionZh": "通过 memo CLI 管理 Apple Notes：创建、搜索、编辑。",
+                "path": "apple/apple-notes",
+            }
+        })
+
+    def test_official_catalog_refresh_is_authoritative_and_offline_safe(self):
+        with tempfile.TemporaryDirectory() as directory:
+            snapshot = Path(directory) / "catalog.json"
+            snapshot.write_text(json.dumps({
+                "skills": {
+                    "apple-notes": {"descriptionZh": "离线简介", "path": "apple/apple-notes"},
+                    "not-on-official-page": {"descriptionZh": "本地翻译", "path": "other"},
+                }
+            }), encoding="utf-8")
+            remote = {
+                "apple-notes": {"descriptionZh": "官方简介", "path": "apple/apple-notes"},
+            }
+            catalog = BuiltinCatalog(
+                snapshot,
+                fetcher=lambda: remote,
+                background_refresh=False,
+            )
+
+            self.assertEqual(catalog.snapshot()["apple-notes"]["descriptionZh"], "离线简介")
+            self.assertTrue(catalog.refresh_now())
+            self.assertEqual(catalog.snapshot(), remote)
+
+            failing = BuiltinCatalog(
+                snapshot,
+                fetcher=lambda: (_ for _ in ()).throw(OSError("offline")),
+                background_refresh=False,
+            )
+            self.assertFalse(failing.refresh_now())
+            self.assertEqual(failing.snapshot()["apple-notes"]["descriptionZh"], "离线简介")
+
+    def test_bundled_chinese_catalog_is_an_official_page_snapshot(self):
+        catalog = json.loads(
+            (DASHBOARD / "data" / "builtin_catalog.json").read_text(encoding="utf-8")
+        )
+        self.assertEqual(catalog["schemaVersion"], 2)
+        self.assertEqual(catalog["source"], OFFICIAL_CATALOG_URL)
+        self.assertGreater(len(catalog["skills"]), 60)
+        self.assertNotIn("petdex", catalog["skills"])
+        self.assertNotIn("simplify-code", catalog["skills"])
+        for row in catalog["skills"].values():
+            self.assertEqual(set(row), {"descriptionZh", "path"})
+
     def test_copy_file_atomic_replaces_desktop_entry_without_temporary_files(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
