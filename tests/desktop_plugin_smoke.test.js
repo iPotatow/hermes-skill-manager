@@ -18,7 +18,9 @@ test('desktop plugin registers a route, navigation, palette, and backend calls',
   assert.match(source, /area:\s*PALETTE_AREA/)
   assert.match(source, /pluginContext\.rest\('\/inventory'\)/)
   assert.match(source, /const ID = 'desktop-skill-manager'/)
-  for (const action of ['delete', 'reset', 'restore', 'update']) assert.match(source, new RegExp(`${action}:`))
+  for (const action of ['delete', 'reset', 'restore', 'update', 'sync-codex']) assert.match(source, new RegExp(`${action}`))
+  assert.match(source, /codexInstalled/)
+  assert.match(source, /force: action === 'sync-codex'/)
 })
 
 test('desktop plugin avoids hard-coded color literals', () => {

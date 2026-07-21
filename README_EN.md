@@ -2,7 +2,7 @@
 
 English | [简体中文](README.md)
 
-`desktop-skill-manager` is a standalone native Hermes Desktop plugin for inspecting and maintaining built-in, Skills Hub, and local skills. It contains no Dashboard page and does not depend on the Dashboard plugin repository.
+`desktop-skill-manager` is a standalone native Hermes Desktop plugin for inspecting and maintaining built-in, Skills Hub, and local skills, and for syncing Hermes skills into Codex. It contains no Dashboard page and does not depend on the Dashboard plugin repository.
 
 ## Features
 
@@ -11,6 +11,7 @@ English | [简体中文](README.md)
 - Skill details, recent actions, diagnostics, and automatic refresh
 - Built-in reset/delete/restore; Hub reset/update/delete; local delete
 - Exact-name confirmation for delete and reset
+- One-click sync to `$CODEX_HOME/skills/<skill-name>` with exact-name confirmation before replacing an existing Codex skill
 - English/Chinese UI, responsive layout, and Hermes Desktop theme support
 
 ## Installation
@@ -46,6 +47,7 @@ tests/                                          # Desktop and backend tests
 ## Safety
 
 - Filesystem actions verify that targets remain inside the active profile's skill directory.
+- Sync rejects path traversal, symlinks, and special files, then atomically replaces the destination through a temporary directory.
 - Delete physically removes the skill directory; this version creates no backup.
 - History is stored at `$HERMES_HOME/state/plugins/desktop-skill-manager.json`.
 - Third-party plugins execute local code; install only trusted sources.
@@ -58,4 +60,4 @@ node --test tests/desktop_plugin_smoke.test.js
 python3 -m unittest discover -s tests -v
 ```
 
-Plugin ID: `desktop-skill-manager` · Desktop route: `/desktop-skill-manager` · Version: `1.0.0`
+Plugin ID: `desktop-skill-manager` · Desktop route: `/desktop-skill-manager` · Version: `1.1.0`

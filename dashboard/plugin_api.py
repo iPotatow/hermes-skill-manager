@@ -9,6 +9,7 @@ import json
 import os
 import shutil
 import threading
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
@@ -46,6 +47,7 @@ LEGACY_STATE_PATH = PLUGIN_ROOT / "state.json"
 BUILTIN_CATALOG_PATH = PLUGIN_ROOT / "dashboard" / "data" / "builtin_catalog.json"
 _BUILTIN_CATALOG_CACHE: Tuple[int, Dict[str, Dict[str, str]]] = (-1, {})
 _STATE_LOCK = threading.RLock()
+_SYNC_LOCK = threading.RLock()
 
 
 class SkillAction(BaseModel):
@@ -70,6 +72,15 @@ def _skills_dir() -> Path:
         return Path(resolve_skills_dir())
     except Exception:
         return _home() / "skills"
+
+
+def _codex_home() -> Path:
+    configured = os.environ.get("CODEX_HOME", "").strip()
+    return Path(configured).expanduser() if configured else Path.home() / ".codex"
+
+
+def _codex_skills_dir() -> Path:
+    return _codex_home() / "skills"
 
 
 def _state_path() -> Path:
@@ -251,6 +262,69 @@ def _safe_target(rel_path: str) -> Path:
     return target
 
 
+def _safe_codex_target(name: str, create_root: bool = False) -> Path:
+    if not name or name in {".", ".."} or Path(name).name != name or "/" in name or "\\" in name:
+        raise HTTPException(status_code=400, detail="Codex 技能名不安全")
+    root = _codex_skills_dir().expanduser()
+    if create_root:
+        root.mkdir(parents=True, exist_ok=True)
+    root = root.resolve()
+    target = root / name
+    if target.is_symlink():
+        raise HTTPException(status_code=400, detail="Codex 技能目标不能是符号链接")
+    resolved = target.resolve()
+    if resolved == root or not resolved.is_relative_to(root):
+        raise HTTPException(status_code=400, detail="Codex 技能路径不安全")
+    return target
+
+
+def _validate_sync_source(source: Path) -> None:
+    if not source.is_dir() or not (source / "SKILL.md").is_file():
+        raise HTTPException(status_code=400, detail="Hermes 技能缺少 SKILL.md，无法同步到 Codex")
+    for item in source.rglob("*"):
+        if item.is_symlink():
+            raise HTTPException(status_code=400, detail=f"技能包含符号链接，无法安全同步：{item.name}")
+        if not item.is_dir() and not item.is_file():
+            raise HTTPException(status_code=400, detail=f"技能包含不支持的特殊文件：{item.name}")
+
+
+def _codex_fields(row: Dict[str, Any]) -> Dict[str, Any]:
+    if row.get("status") == "deleted":
+        return {"codexInstalled": False, "codexPath": ""}
+    try:
+        target = _safe_codex_target(str(row.get("name", "")))
+        installed = target.exists()
+        return {"codexInstalled": installed, "codexPath": str(target)}
+    except Exception:
+        return {"codexInstalled": False, "codexPath": ""}
+
+
+def _copy_skill_to_codex(source: Path, target: Path, force: bool = False) -> None:
+    _validate_sync_source(source)
+    if target.exists() and not target.is_dir():
+        raise HTTPException(status_code=409, detail="Codex 目标已存在且不是技能目录")
+    if target.exists() and not force:
+        raise HTTPException(status_code=409, detail="Codex 中已存在同名技能；确认覆盖后才能重新同步")
+
+    temporary = target.parent / f".{target.name}.{uuid.uuid4().hex}.tmp"
+    backup = target.parent / f".{target.name}.{uuid.uuid4().hex}.bak"
+    replaced = False
+    try:
+        shutil.copytree(source, temporary)
+        if target.exists():
+            os.replace(target, backup)
+            replaced = True
+        os.replace(temporary, target)
+        if backup.exists():
+            shutil.rmtree(backup, ignore_errors=True)
+    except Exception:
+        if temporary.exists():
+            shutil.rmtree(temporary, ignore_errors=True)
+        if replaced and backup.exists() and not target.exists():
+            os.replace(backup, target)
+        raise
+
+
 def _normalize_path(path_value: Any, name: str, category: str) -> str:
     if isinstance(path_value, str) and path_value:
         try:
@@ -315,6 +389,7 @@ def _skill_row(skill: Dict[str, Any], hub: Dict[str, Dict[str, Any]], builtin: s
         "updatedAt": updated_at,
     }
     row["availableActions"] = _available_actions(row)
+    row.update(_codex_fields(row))
     return row
 
 
@@ -434,6 +509,7 @@ async def inventory() -> Dict[str, Any]:
         "meta": {
             "home": str(_home()),
             "skillsDir": str(_skills_dir()),
+            "codexSkillsDir": str(_codex_skills_dir()),
             "generatedAt": _now(),
             "partial": bool(diagnostics),
         },
@@ -523,3 +599,21 @@ async def update_skill(action: SkillAction) -> Dict[str, Any]:
     _clear_skill_cache()
     _record_history({"action": "update", "source": row.get("kind", row["source"]), "name": row["name"]})
     return {"ok": True, "skill": row}
+
+
+@router.post("/sync-codex")
+async def sync_skill_to_codex(action: SkillAction) -> Dict[str, Any]:
+    row = _find_skill(action.source, action.name)
+    source = _safe_target(row["installPath"])
+    target = _safe_codex_target(row["name"], create_root=True)
+    if action.force:
+        _require_confirm(action, row["name"])
+    try:
+        with _SYNC_LOCK:
+            _copy_skill_to_codex(source, target, force=bool(action.force))
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"同步到 Codex 失败：{exc}") from exc
+    _record_history({"action": "sync-codex", "source": row.get("kind", row["source"]), "name": row["name"]})
+    return {"ok": True, "skill": row, "codexPath": str(target)}

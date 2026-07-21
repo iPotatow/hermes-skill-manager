@@ -1,6 +1,6 @@
 name: desktop-skill-manager
-version: 1.0.0
-description: "Native Hermes Desktop plugin for managing built-in, community, and local skills."
+version: 1.1.0
+description: "Native Hermes Desktop plugin for managing Hermes skills and syncing them into Codex."
 author: iPotatow
 kind: standalone
 platforms:

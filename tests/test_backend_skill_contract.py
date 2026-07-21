@@ -20,6 +20,84 @@ def load_backend():
 
 
 class BackendSkillContractTest(unittest.TestCase):
+    def test_sync_to_codex_copies_a_complete_skill_and_records_history(self):
+        module = load_backend()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            hermes_skills = root / "hermes-skills"
+            codex_skills = root / "codex" / "skills"
+            source = hermes_skills / "demo-skill"
+            (source / "references").mkdir(parents=True)
+            (source / "SKILL.md").write_text("---\nname: demo-skill\n---\n", encoding="utf-8")
+            (source / "references" / "guide.md").write_text("guide", encoding="utf-8")
+            module._skills_dir = lambda: hermes_skills
+            module._codex_skills_dir = lambda: codex_skills
+            module._find_skill = lambda _source, _name: {
+                "name": "demo-skill", "kind": "local", "source": "local", "installPath": "demo-skill"
+            }
+            events = []
+            module._record_history = events.append
+
+            result = asyncio.run(module.sync_skill_to_codex(SimpleNamespace(
+                source="local", name="demo-skill", force=False
+            )))
+
+            target = codex_skills / "demo-skill"
+            self.assertTrue(result["ok"])
+            self.assertEqual((target / "SKILL.md").read_text(encoding="utf-8"), "---\nname: demo-skill\n---\n")
+            self.assertEqual((target / "references" / "guide.md").read_text(encoding="utf-8"), "guide")
+            self.assertEqual(events[0]["action"], "sync-codex")
+
+    def test_sync_to_codex_requires_force_before_replacing(self):
+        module = load_backend()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "hermes" / "demo-skill"
+            target = root / "codex" / "skills" / "demo-skill"
+            source.mkdir(parents=True)
+            target.mkdir(parents=True)
+            (source / "SKILL.md").write_text("new", encoding="utf-8")
+            (target / "SKILL.md").write_text("old", encoding="utf-8")
+
+            with self.assertRaises(module.HTTPException) as raised:
+                module._copy_skill_to_codex(source, target, force=False)
+            self.assertEqual(raised.exception.status_code, 409)
+            self.assertEqual((target / "SKILL.md").read_text(encoding="utf-8"), "old")
+
+            module._copy_skill_to_codex(source, target, force=True)
+            self.assertEqual((target / "SKILL.md").read_text(encoding="utf-8"), "new")
+            self.assertFalse(list(target.parent.glob(".*.tmp")))
+            self.assertFalse(list(target.parent.glob(".*.bak")))
+
+    def test_sync_to_codex_force_requires_exact_name_confirmation(self):
+        module = load_backend()
+        module._find_skill = lambda _source, _name: {
+            "name": "demo-skill", "kind": "local", "source": "local", "installPath": "demo-skill"
+        }
+        module._safe_target = lambda _path: Path("/tmp/demo-skill")
+        module._safe_codex_target = lambda _name, create_root=False: Path("/tmp/codex/demo-skill")
+        action = SimpleNamespace(source="local", name="demo-skill", force=True, confirm="wrong")
+        with self.assertRaises(module.HTTPException) as raised:
+            asyncio.run(module.sync_skill_to_codex(action))
+        self.assertEqual(raised.exception.status_code, 400)
+
+    def test_sync_to_codex_rejects_unsafe_names_and_symlinks(self):
+        module = load_backend()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            module._codex_skills_dir = lambda: root / "codex" / "skills"
+            for name in ("../escape", "nested/skill", ""):
+                with self.assertRaises(module.HTTPException):
+                    module._safe_codex_target(name, create_root=True)
+
+            source = root / "source"
+            source.mkdir()
+            (source / "SKILL.md").write_text("demo", encoding="utf-8")
+            (source / "outside-link").symlink_to(root / "outside")
+            with self.assertRaises(module.HTTPException) as raised:
+                module._validate_sync_source(source)
+            self.assertEqual(raised.exception.status_code, 400)
+
     def test_state_is_atomic_and_lives_outside_the_plugin_installation(self):
         module = load_backend()
         with tempfile.TemporaryDirectory() as directory:
