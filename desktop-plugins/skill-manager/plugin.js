@@ -178,7 +178,8 @@ let pluginContext
 
 const asArray = value => Array.isArray(value) ? value : []
 const sourceOf = row => row.kind || row.source || 'local'
-const canSync = row => ['hub-installed', 'local'].includes(sourceOf(row)) && row.status !== 'deleted'
+const canSync = row => ['builtin', 'hub-installed', 'local'].includes(sourceOf(row))
+  && row.status !== 'deleted'
 const actionsOf = row => Array.from(new Set([
   ...asArray(row.availableActions),
   ...(canSync(row) ? ['sync-codex'] : [])
@@ -591,7 +592,6 @@ function CodexTable({ busy, onAction, path, rows, t }) {
               className: 'bg-(--ui-bg-secondary) text-left text-xs text-(--ui-text-tertiary)',
               children: jsx('tr', { children: [
                 jsx('th', { className: 'px-3 py-2 font-medium', children: t('table.skill') }),
-                jsx('th', { className: 'px-3 py-2 font-medium', children: t('table.description') }),
                 jsx('th', { className: 'px-3 py-2 font-medium', children: t('table.path') }),
                 jsx('th', { className: 'px-3 py-2 text-right font-medium', children: t('table.actions') })
               ] })
@@ -601,10 +601,16 @@ function CodexTable({ busy, onAction, path, rows, t }) {
               children: rows.map(row => jsx('tr', {
                 className: 'align-top hover:bg-(--ui-bg-secondary)',
                 children: [
-                  jsx('td', { className: 'px-3 py-2 font-medium', children: row.name }),
                   jsx('td', {
-                    className: 'max-w-sm px-3 py-2 text-(--ui-text-secondary)',
-                    children: row.description || t('noDescription')
+                    className: 'px-3 py-2',
+                    children: jsxs('div', { className: 'max-w-[32rem] min-w-0', children: [
+                      jsx('div', { className: 'break-all font-medium', children: row.name }),
+                      jsx('div', {
+                        className: 'mt-0.5 truncate text-xs text-(--ui-text-secondary)',
+                        title: row.description || t('noDescription'),
+                        children: row.description || t('noDescription')
+                      })
+                    ] })
                   }),
                   jsx('td', {
                     className: 'px-3 py-2',
@@ -738,12 +744,11 @@ function SkillTable({ busy, language, onAction, onSelect, rows, t }) {
   if (!rows.length) return jsx(EmptyState, { title: t('emptyTitle'), description: t('emptyBody') })
   return jsx('div', {
     className: 'overflow-x-auto border border-(--ui-stroke-secondary)',
-    children: jsxs('table', { className: 'w-full min-w-[72rem] border-collapse text-sm', children: [
+    children: jsxs('table', { className: 'w-full min-w-[64rem] border-collapse text-sm', children: [
       jsx('thead', {
         className: 'bg-(--ui-bg-secondary) text-left text-xs text-(--ui-text-tertiary)',
         children: jsx('tr', { children: [
           jsx('th', { className: 'px-3 py-2 font-medium', children: t('table.skill') }),
-          jsx('th', { className: 'px-3 py-2 font-medium', children: t('table.description') }),
           jsx('th', { className: 'px-3 py-2 font-medium', children: t('table.source') }),
           jsx('th', { className: 'px-3 py-2 font-medium', children: t('table.category') }),
           jsx('th', { className: 'px-3 py-2 font-medium', children: t('table.status') }),
@@ -758,16 +763,19 @@ function SkillTable({ busy, language, onAction, onSelect, rows, t }) {
           children: [
             jsx('td', {
               className: 'px-3 py-2',
-              children: jsx('button', {
-                className: 'break-all text-left font-medium hover:underline',
-                type: 'button',
-                onClick: () => onSelect(row),
-                children: row.name
-              })
-            }),
-            jsx('td', {
-              className: 'max-w-sm px-3 py-2 text-(--ui-text-secondary)',
-              children: descriptionOf(row, language) || t('noDescription')
+              children: jsxs('div', { className: 'max-w-[32rem] min-w-0', children: [
+                jsx('button', {
+                  className: 'block max-w-full break-all text-left font-medium hover:underline',
+                  type: 'button',
+                  onClick: () => onSelect(row),
+                  children: row.name
+                }),
+                jsx('div', {
+                  className: 'mt-0.5 truncate text-xs text-(--ui-text-secondary)',
+                  title: descriptionOf(row, language) || t('noDescription'),
+                  children: descriptionOf(row, language) || t('noDescription')
+                })
+              ] })
             }),
             jsx('td', {
               className: 'px-3 py-2',

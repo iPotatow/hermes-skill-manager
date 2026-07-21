@@ -183,8 +183,8 @@ class SkillManager:
         force: bool = False,
     ) -> dict[str, Any]:
         row = self.inventory_reader.find(source, name)
-        if self._kind(row) not in {"hub-installed", "local"}:
-            raise SkillManagerError(400, "只有 Hermes 社区或本地技能可以同步到 Codex")
+        if self._kind(row) not in {"builtin", "hub-installed", "local"}:
+            raise SkillManagerError(400, "该类型的 Hermes 技能不允许同步到 Codex")
         source_path = self.inventory_reader.safe_target(row["installPath"])
         target = self.inventory_reader.safe_codex_target(row["name"], create_root=True)
         if force:

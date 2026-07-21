@@ -342,6 +342,24 @@ class BackendSkillContractTest(unittest.TestCase):
         self.assertEqual(actions({"kind": "local", "status": "enabled"}), ["delete"])
         self.assertEqual(actions({"kind": "builtin", "status": "deleted"}), ["restore"])
 
+    def test_builtin_rows_report_codex_sync_status(self):
+        with tempfile.TemporaryDirectory() as directory:
+            paths = SkillPaths(codex_home_override=Path(directory) / "codex")
+            target = paths.codex_skills / "demo"
+            target.mkdir(parents=True)
+            inventory = SkillInventory(paths)
+
+            enabled = inventory._codex_fields({
+                "kind": "builtin", "name": "demo", "status": "enabled"
+            })
+            deleted = inventory._codex_fields({
+                "kind": "builtin", "name": "demo", "status": "deleted"
+            })
+
+            self.assertTrue(enabled["codexInstalled"])
+            self.assertEqual(enabled["codexPath"], str(target.resolve()))
+            self.assertEqual(deleted, {"codexInstalled": False, "codexPath": ""})
+
     def test_capture_returns_fallback_and_records_diagnostic(self):
         diagnostics = []
 
@@ -402,8 +420,8 @@ class BackendSkillContractTest(unittest.TestCase):
         store.record = lambda _event: (_ for _ in ()).throw(OSError("read only"))
         store.record_best_effort({"action": "delete", "name": "example"})
 
-    def test_sync_accepts_local_and_community_and_records_history(self):
-        for kind in ("local", "hub-installed"):
+    def test_sync_accepts_builtin_local_and_community_and_records_history(self):
+        for kind in ("builtin", "local", "hub-installed"):
             with self.subTest(kind=kind), tempfile.TemporaryDirectory() as directory:
                 root = Path(directory)
                 source = root / "hermes" / "demo"
@@ -420,25 +438,19 @@ class BackendSkillContractTest(unittest.TestCase):
                 self.assertTrue((target / "SKILL.md").is_file())
                 self.assertEqual(state.events[0]["action"], "sync-codex")
 
-    def test_sync_rejects_builtin_and_force_requires_exact_confirmation(self):
+    def test_sync_force_requires_exact_confirmation(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             source = root / "source"
             target = root / "target"
             source.mkdir()
             (source / "SKILL.md").write_text("demo", encoding="utf-8")
-            builtin = {"name": "demo", "kind": "builtin", "source": "builtin", "installPath": "demo"}
+            local = {"name": "demo", "kind": "local", "source": "local", "installPath": "demo"}
             manager = SkillManager(
-                inventory=InventoryStub([builtin], source, target),
+                inventory=InventoryStub([local], source, target),
                 state=StateStub(),
                 runtime=RuntimeStub(),
             )
-            with self.assertRaises(SkillManagerError) as raised:
-                manager.sync_codex("builtin", "demo")
-            self.assertEqual(raised.exception.status_code, 400)
-
-            local = {"name": "demo", "kind": "local", "source": "local", "installPath": "demo"}
-            manager.inventory_reader = InventoryStub([local], source, target)
             with self.assertRaises(SkillManagerError):
                 manager.sync_codex("local", "demo", confirm="wrong", force=True)
 

@@ -41,7 +41,7 @@ test('desktop action policy preserves every backend operation and confirmation b
   for (const action of ['delete', 'delete-codex', 'reset', 'restore', 'update', 'sync-codex']) {
     assert.match(source, new RegExp(action))
   }
-  assert.match(source, /\['hub-installed', 'local'\]\.includes\(sourceOf\(row\)\)/)
+  assert.match(source, /\['builtin', 'hub-installed', 'local'\]\.includes\(sourceOf\(row\)\)/)
   assert.match(source, /force:\s*action === 'sync-codex' && Boolean\(confirm\)/)
   assert.match(source, /CONFIRMED_ACTIONS = new Set\(\['delete', 'delete-codex', 'reset'\]\)/)
   assert.match(source, /payload\.status === 409/)
@@ -55,6 +55,13 @@ test('desktop renders Hermes and Codex user skills as tables without skill cards
   assert.doesNotMatch(source, /function SkillCard/)
   assert.doesNotMatch(source, /function SkillList/)
   assert.doesNotMatch(source, /codexList\.(?:system|user)/)
+})
+
+test('descriptions sit below skill names and stay on one line', () => {
+  assert.doesNotMatch(source, /children:\s*t\('table\.description'\)/)
+  assert.match(source, /className: 'mt-0\.5 truncate text-xs text-\(--ui-text-secondary\)'/)
+  assert.match(source, /title: descriptionOf\(row, language\) \|\| t\('noDescription'\)/)
+  assert.match(source, /title: row\.description \|\| t\('noDescription'\)/)
 })
 
 test('confirmation dialog can fill the exact skill name with one click', () => {

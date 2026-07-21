@@ -216,7 +216,7 @@ class SkillInventory:
 
     def _codex_fields(self, row: dict[str, Any]) -> dict[str, Any]:
         kind = row.get("kind") or row.get("source")
-        if kind not in {"hub-installed", "local"} or row.get("status") == "deleted":
+        if kind not in {"builtin", "hub-installed", "local"} or row.get("status") == "deleted":
             return {"codexInstalled": False, "codexPath": ""}
         try:
             target = self.safe_codex_target(str(row.get("name", "")))
