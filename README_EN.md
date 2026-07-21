@@ -16,7 +16,7 @@ English | [简体中文](README.md)
 - Built-in reset/delete/restore; Hub reset/update/delete; local delete
 - Exact-name confirmation for delete and reset, with a one-click name-fill button
 - Built-in, community, and local skills all show the “Sync” action and can be copied to `$CODEX_HOME/skills/<skill-name>`; replacement requires exact-name confirmation
-- Tables place each description below its skill name and clamp it to one line; the full text remains available on hover and in details
+- The main table shows Skill, Category, Source, Type, and Actions; descriptions sit below skill names and stay on one line, with full text on hover and in details
 - A **Codex** source tab appears immediately after **Local** and swaps the main table to Codex user skills; it hides `.system` and safely deletes user skills
 - English/Chinese UI, responsive layout, and Hermes Desktop theme support
 - Actionable install, enable, and restart guidance when the backend is not mounted
@@ -89,4 +89,4 @@ node --test tests/desktop_plugin_smoke.test.js
 python3 -m unittest discover -s tests -v
 ```
 
-Plugin ID: `skill-manager` · Desktop route: `/skill-manager` · Version: `1.5.4`
+Plugin ID: `skill-manager` · Desktop route: `/skill-manager` · Version: `1.5.5`

@@ -58,15 +58,18 @@ test('desktop renders Hermes and Codex user skills as tables without skill cards
 })
 
 test('descriptions sit below skill names and stay on one line', () => {
-  assert.doesNotMatch(source, /children:\s*t\('table\.description'\)/)
-  assert.match(source, /min-w-\[68rem\] table-fixed/)
+  assert.match(source, /min-w-\[64rem\] table-fixed/)
   assert.match(source, /min-w-\[46rem\] table-fixed/)
-  for (const column of ['source', 'category', 'status', 'codex', 'actions']) {
-    assert.match(source, new RegExp(`children: t\\('table\\.${column}'\\)`))
-  }
   assert.match(source, /className: 'mt-0\.5 truncate text-xs text-\(--ui-text-secondary\)'/)
   assert.match(source, /title: descriptionOf\(row, language\) \|\| t\('noDescription'\)/)
   assert.match(source, /title: row\.description \|\| t\('noDescription'\)/)
+})
+
+test('main table columns are skill category source type and actions', () => {
+  assert.match(source, /skill: '技能', category: '分类', source: '来源', type: '类型'/)
+  assert.match(source, /table\.skill[\s\S]*table\.category[\s\S]*table\.source[\s\S]*table\.type[\s\S]*table\.actions/)
+  assert.doesNotMatch(source, /children:\s*t\('table\.(?:description|status|codex)'\)/)
+  assert.match(source, /const rawSourceOf = row => row\.rawSource \|\| row\.source \|\| sourceOf\(row\)/)
 })
 
 test('confirmation dialog can fill the exact skill name with one click', () => {

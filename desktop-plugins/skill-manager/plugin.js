@@ -74,12 +74,11 @@ const MESSAGES = {
       empty: 'No Codex user skills found'
     },
     table: {
-      skill: 'Skill', description: 'Description', source: 'Source',
-      category: 'Category', status: 'Status', codex: 'Codex',
+      skill: 'Skill', category: 'Category', source: 'Source', type: 'Type',
       path: 'Path', actions: 'Actions'
     },
     fields: {
-      category: 'Category', source: 'Source', trust: 'Trust', status: 'Status',
+      category: 'Category', source: 'Source', type: 'Type', trust: 'Trust', status: 'Status',
       path: 'Hermes path', identifier: 'Identifier', installed: 'Installed',
       updated: 'Updated', codexStatus: 'Codex status', codexPath: 'Codex path'
     },
@@ -148,12 +147,11 @@ const MESSAGES = {
       empty: '尚未发现 Codex 用户技能'
     },
     table: {
-      skill: '技能', description: '简介', source: '来源',
-      category: '分类', status: '状态', codex: 'Codex',
+      skill: '技能', category: '分类', source: '来源', type: '类型',
       path: '路径', actions: '操作'
     },
     fields: {
-      category: '分类', source: '来源', trust: '信任', status: '状态',
+      category: '分类', source: '来源', type: '类型', trust: '信任', status: '状态',
       path: 'Hermes 路径', identifier: '标识', installed: '安装时间',
       updated: '更新时间', codexStatus: 'Codex 状态', codexPath: 'Codex 路径'
     },
@@ -178,6 +176,7 @@ let pluginContext
 
 const asArray = value => Array.isArray(value) ? value : []
 const sourceOf = row => row.kind || row.source || 'local'
+const rawSourceOf = row => row.rawSource || row.source || sourceOf(row)
 const canSync = row => ['builtin', 'hub-installed', 'local'].includes(sourceOf(row))
   && row.status !== 'deleted'
 const actionsOf = row => Array.from(new Set([
@@ -374,7 +373,8 @@ function DetailDrawer({ busy, language, onAction, onClose, row, t }) {
   if (!row) return null
   const fields = [
     [t('fields.category'), row.category || t('root')],
-    [t('fields.source'), t(`sources.${sourceOf(row)}`)],
+    [t('fields.source'), rawSourceOf(row)],
+    [t('fields.type'), t(`sources.${sourceOf(row)}`)],
     [t('fields.trust'), t(`trust.${row.trustLevel || sourceOf(row)}`)],
     [t('fields.status'), t(`statuses.${row.status}`)],
     [t('fields.path'), row.installPath || '-'],
@@ -745,63 +745,64 @@ function SkillTable({ busy, language, onAction, onSelect, rows, t }) {
   return jsx('div', {
     className: 'overflow-x-auto border border-(--ui-stroke-secondary)',
     children: jsxs('table', {
-      className: 'w-full min-w-[68rem] table-fixed border-collapse text-sm',
+      className: 'w-full min-w-[64rem] table-fixed border-collapse text-sm',
       children: [
-      jsx('thead', {
-        className: 'bg-(--ui-bg-secondary) text-left text-xs text-(--ui-text-tertiary)',
-        children: jsx('tr', { children: [
-          jsx('th', { className: 'w-[22rem] px-3 py-2 font-medium', children: t('table.skill') }),
-          jsx('th', { className: 'w-[7rem] px-3 py-2 font-medium', children: t('table.source') }),
-          jsx('th', { className: 'w-[9rem] px-3 py-2 font-medium', children: t('table.category') }),
-          jsx('th', { className: 'w-[7rem] px-3 py-2 font-medium', children: t('table.status') }),
-          jsx('th', { className: 'w-[8rem] px-3 py-2 font-medium', children: t('table.codex') }),
-          jsx('th', { className: 'w-[15rem] px-3 py-2 text-right font-medium', children: t('table.actions') })
-        ] })
-      }),
-      jsx('tbody', {
-        className: 'divide-y divide-(--ui-stroke-secondary)',
-        children: rows.map(row => jsx('tr', {
-          className: 'align-top hover:bg-(--ui-bg-secondary)',
-          children: [
-            jsx('td', {
-              className: 'px-3 py-2',
-              children: jsxs('div', { className: 'min-w-0', children: [
-                jsx('button', {
-                  className: 'block max-w-full break-all text-left font-medium hover:underline',
-                  type: 'button',
-                  onClick: () => onSelect(row),
-                  children: row.name
-                }),
-                jsx('div', {
-                  className: 'mt-0.5 truncate text-xs text-(--ui-text-secondary)',
-                  title: descriptionOf(row, language) || t('noDescription'),
-                  children: descriptionOf(row, language) || t('noDescription')
+        jsx('thead', {
+          className: 'bg-(--ui-bg-secondary) text-left text-xs text-(--ui-text-tertiary)',
+          children: jsx('tr', { children: [
+            jsx('th', { className: 'w-[25rem] px-3 py-2 font-medium', children: t('table.skill') }),
+            jsx('th', { className: 'w-[9rem] px-3 py-2 font-medium', children: t('table.category') }),
+            jsx('th', { className: 'w-[8rem] px-3 py-2 font-medium', children: t('table.source') }),
+            jsx('th', { className: 'w-[7rem] px-3 py-2 font-medium', children: t('table.type') }),
+            jsx('th', { className: 'w-[15rem] px-3 py-2 text-right font-medium', children: t('table.actions') })
+          ] })
+        }),
+        jsx('tbody', {
+          className: 'divide-y divide-(--ui-stroke-secondary)',
+          children: rows.map(row => jsx('tr', {
+            className: 'align-top hover:bg-(--ui-bg-secondary)',
+            children: [
+              jsx('td', {
+                className: 'px-3 py-2',
+                children: jsxs('div', { className: 'min-w-0', children: [
+                  jsx('button', {
+                    className: 'block max-w-full break-all text-left font-medium hover:underline',
+                    type: 'button',
+                    onClick: () => onSelect(row),
+                    children: row.name
+                  }),
+                  jsx('div', {
+                    className: 'mt-0.5 truncate text-xs text-(--ui-text-secondary)',
+                    title: descriptionOf(row, language) || t('noDescription'),
+                    children: descriptionOf(row, language) || t('noDescription')
+                  })
+                ] })
+              }),
+              jsx('td', { className: 'px-3 py-2', children: row.category || t('root') }),
+              jsx('td', {
+                className: 'px-3 py-2',
+                children: jsx('span', {
+                  className: 'block truncate',
+                  title: rawSourceOf(row),
+                  children: rawSourceOf(row)
                 })
-              ] })
-            }),
-            jsx('td', {
-              className: 'px-3 py-2',
-              children: jsx(ToneBadge, { tone: sourceOf(row), children: t(`sources.${sourceOf(row)}`) })
-            }),
-            jsx('td', { className: 'px-3 py-2', children: row.category || t('root') }),
-            jsx('td', {
-              className: 'px-3 py-2',
-              children: jsx(ToneBadge, { tone: row.status, children: t(`statuses.${row.status}`) })
-            }),
-            jsx('td', {
-              className: 'px-3 py-2',
-              children: canSync(row)
-                ? t(row.codexInstalled ? 'codex.installed' : 'codex.notInstalled')
-                : '-'
-            }),
-            jsx('td', {
-              className: 'px-3 py-2',
-              children: jsx(ActionButtons, { busy, onAction, row, t })
-            })
-          ]
-        }, `${sourceOf(row)}:${row.name}`))
-      })
-    ] })
+              }),
+              jsx('td', {
+                className: 'px-3 py-2',
+                children: jsx(ToneBadge, {
+                  tone: sourceOf(row),
+                  children: t(`sources.${sourceOf(row)}`)
+                })
+              }),
+              jsx('td', {
+                className: 'px-3 py-2',
+                children: jsx(ActionButtons, { busy, onAction, row, t })
+              })
+            ]
+          }, `${sourceOf(row)}:${row.name}`))
+        })
+      ]
+    })
   })
 }
 
