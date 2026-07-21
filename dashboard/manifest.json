@@ -2,6 +2,6 @@
   "name": "desktop-skill-manager",
   "label": "Desktop Skill Manager Backend",
   "description": "Backend API for managing Hermes skills and syncing community or local skills into Codex.",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "api": "plugin_api.py"
 }

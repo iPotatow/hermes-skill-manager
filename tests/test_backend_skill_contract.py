@@ -1,241 +1,387 @@
 import asyncio
 import importlib.util
 import json
+import re
+import sys
 import tempfile
+import threading
 import unittest
 from pathlib import Path
-from types import SimpleNamespace
 
 
 ROOT = Path(__file__).resolve().parents[1]
-BACKEND = ROOT / "dashboard" / "plugin_api.py"
+DASHBOARD = ROOT / "dashboard"
+BACKEND = DASHBOARD / "plugin_api.py"
+if str(DASHBOARD) not in sys.path:
+    sys.path.insert(0, str(DASHBOARD))
+
+from desktop_skill_manager.errors import SkillManagerError
+from desktop_skill_manager.filesystem import copy_skill, safe_descendant, validate_sync_source
+from desktop_skill_manager.inventory import SkillInventory, capture
+from desktop_skill_manager.paths import SkillPaths
+from desktop_skill_manager.service import SkillManager
+from desktop_skill_manager.state import StateStore
 
 
 def load_backend():
-    spec = importlib.util.spec_from_file_location("skill_manage_test_backend", BACKEND)
+    spec = importlib.util.spec_from_file_location("desktop_skill_manager_adapter_test", BACKEND)
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
     spec.loader.exec_module(module)
     return module
 
 
+class StateStub:
+    def __init__(self):
+        self.events = []
+
+    def load(self):
+        return {"version": 1, "history": []}
+
+    @staticmethod
+    def now():
+        return "2026-07-21T00:00:00+00:00"
+
+    def record_best_effort(self, event):
+        self.events.append(dict(event))
+
+
+class RuntimeStub:
+    def __init__(self):
+        self.calls = []
+        self.clear_count = 0
+        self.restore_result = {"ok": True}
+
+    def clear_skill_cache(self):
+        self.clear_count += 1
+
+    def uninstall(self, name):
+        self.calls.append(("uninstall", name))
+
+    def reset_builtin(self, name):
+        self.calls.append(("reset-builtin", name))
+
+    def reset_hub(self, identifier, category):
+        self.calls.append(("reset-hub", identifier, category))
+
+    def restore_builtin(self, name):
+        self.calls.append(("restore", name))
+        return self.restore_result
+
+    def update_hub(self, name):
+        self.calls.append(("update", name))
+
+
+class InventoryStub:
+    def __init__(self, rows, source_path=None, target_path=None):
+        self.rows_by_key = {
+            (row.get("kind") or row.get("source"), row["name"]): row
+            for row in rows
+        }
+        self.source_path = source_path
+        self.target_path = target_path
+        self.missing = {}
+
+    def find(self, source, name):
+        try:
+            return self.rows_by_key[(source, name)]
+        except KeyError as exc:
+            raise SkillManagerError(404, f"missing {source}:{name}") from exc
+
+    def find_missing_builtin(self, name):
+        try:
+            return self.missing[name]
+        except KeyError as exc:
+            raise SkillManagerError(404, f"missing builtin:{name}") from exc
+
+    def safe_target(self, _relative_path):
+        return self.source_path
+
+    def safe_codex_target(self, _name, create_root=False):
+        if create_root:
+            self.target_path.parent.mkdir(parents=True, exist_ok=True)
+        return self.target_path
+
+
 class BackendSkillContractTest(unittest.TestCase):
-    def test_sync_to_codex_copies_a_complete_skill_and_records_history(self):
-        module = load_backend()
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            hermes_skills = root / "hermes-skills"
-            codex_skills = root / "codex" / "skills"
-            source = hermes_skills / "demo-skill"
-            (source / "references").mkdir(parents=True)
-            (source / "SKILL.md").write_text("---\nname: demo-skill\n---\n", encoding="utf-8")
-            (source / "references" / "guide.md").write_text("guide", encoding="utf-8")
-            module._skills_dir = lambda: hermes_skills
-            module._codex_skills_dir = lambda: codex_skills
-            module._find_skill = lambda _source, _name: {
-                "name": "demo-skill", "kind": "local", "source": "local", "installPath": "demo-skill"
-            }
-            events = []
-            module._record_history = events.append
-
-            result = asyncio.run(module.sync_skill_to_codex(SimpleNamespace(
-                source="local", name="demo-skill", force=False
-            )))
-
-            target = codex_skills / "demo-skill"
-            self.assertTrue(result["ok"])
-            self.assertEqual((target / "SKILL.md").read_text(encoding="utf-8"), "---\nname: demo-skill\n---\n")
-            self.assertEqual((target / "references" / "guide.md").read_text(encoding="utf-8"), "guide")
-            self.assertEqual(events[0]["action"], "sync-codex")
-
-    def test_sync_to_codex_requires_force_before_replacing(self):
-        module = load_backend()
+    def test_copy_skill_is_complete_atomic_and_requires_force(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             source = root / "hermes" / "demo-skill"
             target = root / "codex" / "skills" / "demo-skill"
-            source.mkdir(parents=True)
+            (source / "references").mkdir(parents=True)
             target.mkdir(parents=True)
             (source / "SKILL.md").write_text("new", encoding="utf-8")
+            (source / "references" / "guide.md").write_text("guide", encoding="utf-8")
             (target / "SKILL.md").write_text("old", encoding="utf-8")
 
-            with self.assertRaises(module.HTTPException) as raised:
-                module._copy_skill_to_codex(source, target, force=False)
+            with self.assertRaises(SkillManagerError) as raised:
+                copy_skill(source, target)
             self.assertEqual(raised.exception.status_code, 409)
             self.assertEqual((target / "SKILL.md").read_text(encoding="utf-8"), "old")
 
-            module._copy_skill_to_codex(source, target, force=True)
+            copy_skill(source, target, force=True)
             self.assertEqual((target / "SKILL.md").read_text(encoding="utf-8"), "new")
+            self.assertEqual((target / "references" / "guide.md").read_text(encoding="utf-8"), "guide")
             self.assertFalse(list(target.parent.glob(".*.tmp")))
             self.assertFalse(list(target.parent.glob(".*.bak")))
 
-    def test_sync_to_codex_accepts_community_skills(self):
-        module = load_backend()
+    def test_sync_source_rejects_root_and_nested_symlinks(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            source = root / "hermes" / "community-skill"
-            target = root / "codex" / "skills" / "community-skill"
-            source.mkdir(parents=True)
-            (source / "SKILL.md").write_text("---\nname: community-skill\n---\n", encoding="utf-8")
-            module._find_skill = lambda _source, _name: {
-                "name": "community-skill", "kind": "hub-installed", "source": "hub", "installPath": "community-skill"
-            }
-            module._safe_target = lambda _path: source
-            module._safe_codex_target = lambda _name, create_root=False: target
-            module._record_history = lambda _event: None
-
-            result = asyncio.run(module.sync_skill_to_codex(SimpleNamespace(
-                source="hub-installed", name="community-skill", force=False, confirm=""
-            )))
-
-            self.assertTrue(result["ok"])
-            self.assertTrue((target / "SKILL.md").is_file())
-
-    def test_codex_inventory_lists_user_and_system_skills(self):
-        module = load_backend()
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory) / "skills"
-            user_skill = root / "my-skill"
-            system_skill = root / ".system" / "built-in-helper"
-            user_skill.mkdir(parents=True)
-            system_skill.mkdir(parents=True)
-            (user_skill / "SKILL.md").write_text(
-                '---\nname: "My Skill"\ndescription: "A user skill"\n---\n', encoding="utf-8"
-            )
-            (system_skill / "SKILL.md").write_text(
-                "---\nname: built-in-helper\ndescription: A system skill\n---\n", encoding="utf-8"
-            )
-            module._codex_skills_dir = lambda: root
-
-            rows = module._codex_inventory([])
-
-            self.assertEqual({row["name"] for row in rows}, {"My Skill", "built-in-helper"})
-            by_name = {row["name"]: row for row in rows}
-            self.assertEqual(by_name["My Skill"]["kind"], "user")
-            self.assertEqual(by_name["My Skill"]["description"], "A user skill")
-            self.assertEqual(by_name["built-in-helper"]["kind"], "system")
-            self.assertEqual(by_name["built-in-helper"]["relativePath"], ".system/built-in-helper")
-
-    def test_sync_to_codex_force_requires_exact_name_confirmation(self):
-        module = load_backend()
-        module._find_skill = lambda _source, _name: {
-            "name": "demo-skill", "kind": "local", "source": "local", "installPath": "demo-skill"
-        }
-        module._safe_target = lambda _path: Path("/tmp/demo-skill")
-        module._safe_codex_target = lambda _name, create_root=False: Path("/tmp/codex/demo-skill")
-        action = SimpleNamespace(source="local", name="demo-skill", force=True, confirm="wrong")
-        with self.assertRaises(module.HTTPException) as raised:
-            asyncio.run(module.sync_skill_to_codex(action))
-        self.assertEqual(raised.exception.status_code, 400)
-
-    def test_sync_to_codex_rejects_non_local_skills(self):
-        module = load_backend()
-        module._find_skill = lambda _source, _name: {
-            "name": "builtin-skill", "kind": "builtin", "source": "builtin", "installPath": "builtin-skill"
-        }
-        action = SimpleNamespace(source="builtin", name="builtin-skill", force=False, confirm="")
-        with self.assertRaises(module.HTTPException) as raised:
-            asyncio.run(module.sync_skill_to_codex(action))
-        self.assertEqual(raised.exception.status_code, 400)
-        self.assertIn("本地技能", raised.exception.detail)
-
-    def test_sync_to_codex_rejects_unsafe_names_and_symlinks(self):
-        module = load_backend()
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            module._codex_skills_dir = lambda: root / "codex" / "skills"
-            for name in ("../escape", "nested/skill", ""):
-                with self.assertRaises(module.HTTPException):
-                    module._safe_codex_target(name, create_root=True)
-
             source = root / "source"
             source.mkdir()
             (source / "SKILL.md").write_text("demo", encoding="utf-8")
             (source / "outside-link").symlink_to(root / "outside")
-            with self.assertRaises(module.HTTPException) as raised:
-                module._validate_sync_source(source)
-            self.assertEqual(raised.exception.status_code, 400)
+            with self.assertRaises(SkillManagerError):
+                validate_sync_source(source)
 
-    def test_state_is_atomic_and_lives_outside_the_plugin_installation(self):
-        module = load_backend()
+            linked_source = root / "linked-source"
+            real_source = root / "real-source"
+            real_source.mkdir()
+            (real_source / "SKILL.md").write_text("demo", encoding="utf-8")
+            linked_source.symlink_to(real_source, target_is_directory=True)
+            with self.assertRaises(SkillManagerError):
+                validate_sync_source(linked_source)
+
+    def test_safe_descendant_rejects_escape_and_symlink_components(self):
         with tempfile.TemporaryDirectory() as directory:
-            home = Path(directory)
-            module.get_hermes_home = lambda: home
-            module._save_state({"version": 1, "history": [{"action": "update"}]})
+            root = Path(directory) / "skills"
+            outside = Path(directory) / "outside"
+            root.mkdir()
+            outside.mkdir()
+            (root / "linked").symlink_to(outside, target_is_directory=True)
 
-            path = home / "state" / "plugins" / "desktop-skill-manager.json"
-            self.assertTrue(path.exists())
-            self.assertEqual(json.loads(path.read_text(encoding="utf-8"))["history"][0]["action"], "update")
-            self.assertFalse(list(path.parent.glob("*.tmp")))
+            self.assertEqual(
+                safe_descendant(root, "category/demo", "unsafe"),
+                root.resolve() / "category" / "demo",
+            )
+            for value in ("", "..", "../escape", "/absolute", "linked/demo"):
+                with self.subTest(value=value), self.assertRaises(SkillManagerError):
+                    safe_descendant(root, value, "unsafe")
 
-    def test_history_failure_does_not_mask_a_completed_operation(self):
-        module = load_backend()
-        module._history = lambda _event: (_ for _ in ()).throw(OSError("read only"))
+    def test_codex_inventory_lists_user_and_system_skills(self):
+        with tempfile.TemporaryDirectory() as directory:
+            paths = SkillPaths(codex_home_override=Path(directory) / "codex")
+            user = paths.codex_skills / "my-skill"
+            system = paths.codex_skills / ".system" / "helper"
+            user.mkdir(parents=True)
+            system.mkdir(parents=True)
+            (user / "SKILL.md").write_text(
+                '---\nname: "My Skill"\ndescription: "A user skill"\n---\n',
+                encoding="utf-8",
+            )
+            (system / "SKILL.md").write_text(
+                "---\nname: helper\ndescription: System helper\n---\n",
+                encoding="utf-8",
+            )
 
-        module._record_history({"action": "delete", "name": "example"})
+            rows = SkillInventory(paths).codex_inventory([])
+            by_name = {row["name"]: row for row in rows}
+            self.assertEqual(set(by_name), {"My Skill", "helper"})
+            self.assertEqual(by_name["My Skill"]["kind"], "user")
+            self.assertEqual(by_name["helper"]["kind"], "system")
+            self.assertEqual(by_name["helper"]["relativePath"], ".system/helper")
 
     def test_available_actions_are_explicit_and_source_accurate(self):
-        module = load_backend()
-
-        self.assertEqual(module._available_actions({"kind": "builtin", "status": "enabled"}), ["reset", "delete"])
-        self.assertEqual(
-            module._available_actions({"kind": "hub-installed", "status": "enabled"}),
-            ["reset", "update", "delete"],
-        )
-        self.assertEqual(module._available_actions({"kind": "local", "status": "enabled"}), ["delete"])
-        self.assertEqual(module._available_actions({"kind": "builtin", "status": "deleted"}), ["restore"])
-
-    def test_reset_requires_exact_name_confirmation(self):
-        module = load_backend()
-        action = SimpleNamespace(source="builtin", name="example", confirm="")
-
-        with self.assertRaises(module.HTTPException) as raised:
-            asyncio.run(module.reset_skill(action))
-
-        self.assertEqual(raised.exception.status_code, 400)
+        actions = SkillInventory.available_actions
+        self.assertEqual(actions({"kind": "builtin", "status": "enabled"}), ["reset", "delete"])
+        self.assertEqual(actions({"kind": "hub-installed", "status": "enabled"}), ["reset", "update", "delete"])
+        self.assertEqual(actions({"kind": "local", "status": "enabled"}), ["delete"])
+        self.assertEqual(actions({"kind": "builtin", "status": "deleted"}), ["restore"])
 
     def test_capture_returns_fallback_and_records_diagnostic(self):
-        module = load_backend()
         diagnostics = []
 
         def broken_loader():
             raise RuntimeError("manifest unavailable")
 
-        result = module._capture("builtin-manifest", broken_loader, set(), diagnostics)
-
+        result = capture("builtin-manifest", broken_loader, set(), diagnostics)
         self.assertEqual(result, set())
         self.assertEqual(diagnostics[0]["component"], "builtin-manifest")
         self.assertIn("manifest unavailable", diagnostics[0]["message"])
 
-    def test_all_content_mutations_clear_the_skill_cache(self):
-        source = BACKEND.read_text(encoding="utf-8")
-        reset_block = source.split("async def reset_skill", 1)[1].split('@router.post("/restore")', 1)[0]
-        update_block = source.split("async def update_skill", 1)[1]
+    def test_discovery_failure_is_reported_instead_of_false_404(self):
+        inventory = SkillInventory(SkillPaths())
+        inventory.bundled_skills = lambda diagnostics: diagnostics.append(
+            {"component": "bundled-skills", "message": "API changed"}
+        ) or []
+        inventory.rows = lambda diagnostics, _names=None: []
 
-        self.assertIn("_clear_skill_cache()", reset_block)
-        self.assertIn("_clear_skill_cache()", update_block)
-        self.assertNotIn("\n    _history(", reset_block)
-
-    def test_action_lookup_reports_discovery_failure_instead_of_false_404(self):
-        module = load_backend()
-
-        def broken_bundled(diagnostics=None):
-            if diagnostics is not None:
-                diagnostics.append({"component": "bundled-skills", "message": "API changed"})
-            return []
-
-        module._bundled_skills = broken_bundled
-        module._inventory_rows = lambda _names, diagnostics=None: []
-
-        with self.assertRaises(module.HTTPException) as raised:
-            module._find_skill("builtin", "example")
-
+        with self.assertRaises(SkillManagerError) as raised:
+            inventory.find("builtin", "example")
         self.assertEqual(raised.exception.status_code, 503)
 
-    def test_skill_paths_follow_the_active_profile_without_private_destination_helper(self):
-        source = BACKEND.read_text(encoding="utf-8")
+    def test_state_store_is_atomic_and_shared_across_request_instances(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "state" / "plugins" / "desktop-skill-manager.json"
+            stores = [StateStore(path) for _index in range(20)]
+            threads = [
+                threading.Thread(target=store.record, args=({"action": "update", "name": str(index)},))
+                for index, store in enumerate(stores)
+            ]
+            for thread in threads:
+                thread.start()
+            for thread in threads:
+                thread.join()
 
-        self.assertIn("from tools.skills_tool import _skills_dir as resolve_skills_dir", source)
+            state = json.loads(path.read_text(encoding="utf-8"))
+            self.assertEqual(len(state["history"]), 20)
+            self.assertFalse(list(path.parent.glob(".*.tmp")))
+
+    def test_history_failure_does_not_mask_completed_operation(self):
+        store = StateStore(Path("/unreachable/state.json"))
+        store.record = lambda _event: (_ for _ in ()).throw(OSError("read only"))
+        store.record_best_effort({"action": "delete", "name": "example"})
+
+    def test_sync_accepts_local_and_community_and_records_history(self):
+        for kind in ("local", "hub-installed"):
+            with self.subTest(kind=kind), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                source = root / "hermes" / "demo"
+                target = root / "codex" / "skills" / "demo"
+                source.mkdir(parents=True)
+                (source / "SKILL.md").write_text("demo", encoding="utf-8")
+                row = {"name": "demo", "kind": kind, "source": kind, "installPath": "demo"}
+                inventory = InventoryStub([row], source, target)
+                state = StateStub()
+                manager = SkillManager(inventory=inventory, state=state, runtime=RuntimeStub())
+
+                result = manager.sync_codex(kind, "demo")
+                self.assertTrue(result["ok"])
+                self.assertTrue((target / "SKILL.md").is_file())
+                self.assertEqual(state.events[0]["action"], "sync-codex")
+
+    def test_sync_rejects_builtin_and_force_requires_exact_confirmation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "source"
+            target = root / "target"
+            source.mkdir()
+            (source / "SKILL.md").write_text("demo", encoding="utf-8")
+            builtin = {"name": "demo", "kind": "builtin", "source": "builtin", "installPath": "demo"}
+            manager = SkillManager(
+                inventory=InventoryStub([builtin], source, target),
+                state=StateStub(),
+                runtime=RuntimeStub(),
+            )
+            with self.assertRaises(SkillManagerError) as raised:
+                manager.sync_codex("builtin", "demo")
+            self.assertEqual(raised.exception.status_code, 400)
+
+            local = {"name": "demo", "kind": "local", "source": "local", "installPath": "demo"}
+            manager.inventory_reader = InventoryStub([local], source, target)
+            with self.assertRaises(SkillManagerError):
+                manager.sync_codex("local", "demo", confirm="wrong", force=True)
+
+    def test_destructive_actions_require_exact_name_before_discovery(self):
+        manager = SkillManager(inventory=InventoryStub([]), state=StateStub(), runtime=RuntimeStub())
+        for method in (manager.delete, manager.reset):
+            with self.subTest(method=method.__name__), self.assertRaises(SkillManagerError) as raised:
+                method("builtin", "example", "wrong")
+            self.assertEqual(raised.exception.status_code, 400)
+
+    def test_all_hermes_content_mutations_clear_cache_and_record(self):
+        with tempfile.TemporaryDirectory() as directory:
+            local_path = Path(directory) / "local"
+            local_path.mkdir()
+            rows = [
+                {"name": "local", "kind": "local", "source": "local", "installPath": "local"},
+                {"name": "builtin", "kind": "builtin", "source": "builtin", "installPath": "builtin"},
+                {"name": "hub", "kind": "hub-installed", "source": "hub", "installPath": "hub", "identifier": "owner/repo", "category": "tools"},
+            ]
+            inventory = InventoryStub(rows, local_path, Path(directory) / "codex")
+            inventory.missing["missing"] = {
+                "name": "missing", "kind": "builtin", "source": "builtin", "installPath": "missing"
+            }
+            state = StateStub()
+            runtime = RuntimeStub()
+            manager = SkillManager(inventory=inventory, state=state, runtime=runtime)
+
+            manager.delete("local", "local", "local")
+            manager.reset("builtin", "builtin", "builtin")
+            manager.reset("hub-installed", "hub", "hub")
+            manager.restore("missing")
+            manager.update("hub")
+
+            self.assertEqual(runtime.clear_count, 5)
+            self.assertEqual([event["action"] for event in state.events], [
+                "delete", "reset", "reset", "restore", "update"
+            ])
+            self.assertIn(("reset-hub", "owner/repo", "tools"), runtime.calls)
+
+    def test_inventory_contract_keeps_counts_history_diagnostics_and_paths(self):
+        class InventoryForResponse:
+            def bundled_skills(self, diagnostics):
+                return []
+
+            def rows(self, diagnostics, _names):
+                return [
+                    {"name": "a", "kind": "builtin", "source": "builtin", "category": "", "status": "enabled"},
+                    {"name": "b", "kind": "local", "source": "local", "category": "tools", "status": "disabled"},
+                ]
+
+            def missing_builtin_rows(self, _rows, _bundled):
+                return [{"name": "missing"}]
+
+            def codex_inventory(self, diagnostics):
+                diagnostics.append({"component": "codex-skill", "message": "partial"})
+                return [{"name": "codex"}]
+
+        paths = SkillPaths(
+            home_override=Path("/hermes"),
+            skills_override=Path("/hermes/skills"),
+            codex_home_override=Path("/codex"),
+        )
+        manager = SkillManager(
+            paths=paths,
+            inventory=InventoryForResponse(),
+            state=StateStub(),
+            runtime=RuntimeStub(),
+        )
+        result = manager.inventory()
+        self.assertEqual(result["counts"], {"builtin": 1, "local": 1})
+        self.assertEqual(result["enabledCount"], 1)
+        self.assertEqual(result["disabledCount"], 1)
+        self.assertEqual(result["missingBuiltinCount"], 1)
+        self.assertEqual(result["codexSkillCount"], 1)
+        self.assertTrue(result["meta"]["partial"])
+        self.assertEqual(result["meta"]["skillsDir"], "/hermes/skills")
+
+    def test_http_adapter_translates_domain_errors_and_keeps_routes_thin(self):
+        module = load_backend()
+        expected_routes = {"/inventory", "/delete", "/reset", "/restore", "/update", "/sync-codex"}
+        if hasattr(module.router, "routes"):
+            self.assertEqual({route.path for route in module.router.routes}, expected_routes)
+        else:
+            adapter_source = BACKEND.read_text(encoding="utf-8")
+            for route in expected_routes:
+                self.assertIn(f'("{route}")', adapter_source)
+
+        class BrokenManager:
+            def inventory(self):
+                raise module.SkillManagerError(503, "discovery failed")
+
+        module._manager = BrokenManager
+        with self.assertRaises(module.HTTPException) as raised:
+            asyncio.run(module.inventory())
+        self.assertEqual(raised.exception.status_code, 503)
+        self.assertIn("discovery failed", raised.exception.detail)
+        self.assertLess(len(BACKEND.read_text(encoding="utf-8").splitlines()), 140)
+
+    def test_version_metadata_and_documentation_stay_in_sync(self):
+        plugin_yaml = (ROOT / "plugin.yaml").read_text(encoding="utf-8")
+        version = re.search(r"^version:\s*(\S+)", plugin_yaml, re.MULTILINE).group(1)
+        manifest_version = json.loads(
+            (DASHBOARD / "manifest.json").read_text(encoding="utf-8")
+        )["version"]
+        self.assertEqual(version, manifest_version)
+        self.assertIn(f"版本：`{version}`", (ROOT / "README.md").read_text(encoding="utf-8"))
+        self.assertIn(f"Version: `{version}`", (ROOT / "README_EN.md").read_text(encoding="utf-8"))
+
+    def test_profile_skill_resolution_uses_supported_hermes_helper(self):
+        source = (DASHBOARD / "desktop_skill_manager" / "paths.py").read_text(encoding="utf-8")
+        self.assertIn("from tools.skills_tool import _skills_dir", source)
         self.assertNotIn("_compute_relative_dest", source)
 
 
