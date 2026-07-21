@@ -7,13 +7,13 @@ import {
 import { useMemo, useState } from 'react'
 import { Fragment, jsx, jsxs } from 'react/jsx-runtime'
 
-const ID = 'desktop-skill-manager'
-const ROUTE = '/desktop-skill-manager'
+const ID = 'skill-manager'
+const ROUTE = '/skill-manager'
 const QUERY_KEY = [ID, 'inventory']
 const REFRESH_INTERVAL_MS = 15000
 const SOURCES = ['all', 'builtin', 'hub-installed', 'local']
 const STATUSES = ['all', 'enabled', 'disabled', 'deleted']
-const CONFIRMED_ACTIONS = new Set(['delete', 'reset'])
+const CONFIRMED_ACTIONS = new Set(['delete', 'delete-codex', 'reset'])
 const TONE_CLASSES = {
   enabled: 'text-foreground border-(--ui-stroke-primary)',
   disabled: 'text-(--ui-text-tertiary) border-(--ui-stroke-secondary)',
@@ -25,7 +25,7 @@ const TONE_CLASSES = {
 
 const MESSAGES = {
   en: {
-    title: 'Hermes & Codex Skills',
+    title: 'Skill Manager',
     subtitle: 'Manage Hermes skills and sync them into Codex.',
     search: 'Search',
     searchPlaceholder: 'Search skills, descriptions, sources, statuses, or paths',
@@ -56,8 +56,9 @@ const MESSAGES = {
     confirm: 'Confirm',
     working: 'Working…',
     confirmPlaceholder: 'Type the exact skill name',
+    confirmFill: 'Fill name',
     success: (action, name) => `${action}: ${name}`,
-    nav: 'Skills',
+    nav: 'Skill Manager',
     open: 'Open Skill Manager',
     stats: { total: 'Total', builtin: 'Built-in', community: 'Community', local: 'Local' },
     sources: { all: 'All', builtin: 'Built-in', 'hub-installed': 'Community', local: 'Local' },
@@ -65,11 +66,14 @@ const MESSAGES = {
     trust: { builtin: 'Built-in', official: 'Official', community: 'Community', local: 'Local' },
     codex: { installed: 'In Codex', notInstalled: 'Not in Codex' },
     codexList: {
-      title: 'Codex skills',
+      title: 'Codex user skills',
       count: value => `${value} skills`,
-      empty: 'No Codex skills found',
-      system: 'System',
-      user: 'User'
+      empty: 'No Codex user skills found'
+    },
+    table: {
+      skill: 'Skill', description: 'Description', source: 'Source',
+      category: 'Category', status: 'Status', codex: 'Codex',
+      path: 'Path', actions: 'Actions'
     },
     fields: {
       category: 'Category', source: 'Source', trust: 'Trust', status: 'Status',
@@ -78,17 +82,21 @@ const MESSAGES = {
     },
     actions: {
       delete: 'Delete', reset: 'Reset', update: 'Update', restore: 'Restore',
-      'sync-codex': 'Sync', 'plugin-update': 'Plugin update'
+      'sync-codex': 'Sync', 'delete-codex': 'Delete', 'plugin-update': 'Plugin update'
     },
-    confirmTitle: { delete: 'Delete skill', reset: 'Reset skill', 'sync-codex': 'Replace Codex skill' },
+    confirmTitle: {
+      delete: 'Delete skill', 'delete-codex': 'Delete Codex skill',
+      reset: 'Reset skill', 'sync-codex': 'Replace Codex skill'
+    },
     confirmBody: {
       delete: name => `This permanently removes the local files for ${name}. Type the exact skill name to continue.`,
+      'delete-codex': name => `This permanently removes the Codex user skill ${name}. Type the exact skill name to continue.`,
       reset: name => `This replaces the local contents of ${name} with its source version. Type the exact skill name to continue.`,
       'sync-codex': name => `Codex already has ${name}. Type the exact skill name to replace it with the Hermes copy.`
     }
   },
   zh: {
-    title: 'Hermes 与 Codex 技能管理',
+    title: '技能管理',
     subtitle: '管理 Hermes 技能，并将它们同步到 Codex。',
     search: '搜索',
     searchPlaceholder: '搜索技能、简介、来源、状态或路径',
@@ -119,8 +127,9 @@ const MESSAGES = {
     confirm: '确认',
     working: '处理中…',
     confirmPlaceholder: '输入完整技能名',
+    confirmFill: '填入名称',
     success: (action, name) => `${action}：${name}`,
-    nav: '技能',
+    nav: '技能管理',
     open: '打开技能管理',
     stats: { total: '总数', builtin: '内建', community: '社区', local: '本地' },
     sources: { all: '全部', builtin: '内建', 'hub-installed': '社区', local: '本地' },
@@ -128,11 +137,14 @@ const MESSAGES = {
     trust: { builtin: '内建', official: '官方', community: '社区', local: '本地' },
     codex: { installed: '已在 Codex', notInstalled: '未在 Codex' },
     codexList: {
-      title: 'Codex 技能列表',
+      title: 'Codex 用户技能',
       count: value => `${value} 个技能`,
-      empty: '尚未发现 Codex 技能',
-      system: '系统',
-      user: '用户'
+      empty: '尚未发现 Codex 用户技能'
+    },
+    table: {
+      skill: '技能', description: '简介', source: '来源',
+      category: '分类', status: '状态', codex: 'Codex',
+      path: '路径', actions: '操作'
     },
     fields: {
       category: '分类', source: '来源', trust: '信任', status: '状态',
@@ -141,11 +153,15 @@ const MESSAGES = {
     },
     actions: {
       delete: '删除', reset: '重置', update: '更新', restore: '恢复',
-      'sync-codex': '同步', 'plugin-update': '插件更新'
+      'sync-codex': '同步', 'delete-codex': '删除', 'plugin-update': '插件更新'
     },
-    confirmTitle: { delete: '删除技能', reset: '重置技能', 'sync-codex': '覆盖 Codex 技能' },
+    confirmTitle: {
+      delete: '删除技能', 'delete-codex': '删除 Codex 技能',
+      reset: '重置技能', 'sync-codex': '覆盖 Codex 技能'
+    },
     confirmBody: {
       delete: name => `这会永久删除 ${name} 的本地文件。请输入完整技能名继续。`,
+      'delete-codex': name => `这会永久删除 Codex 用户技能 ${name}。请输入完整技能名继续。`,
       reset: name => `这会用来源版本覆盖 ${name} 的本地内容。请输入完整技能名继续。`,
       'sync-codex': name => `Codex 中已存在 ${name}。请输入完整技能名，用 Hermes 副本覆盖它。`
     }
@@ -170,7 +186,7 @@ const currentLanguage = () => {
     : typeof navigator !== 'undefined' ? navigator.language : ''
   return String(locale || '').toLowerCase().startsWith('zh') ? 'zh' : 'en'
 }
-const actionVariant = action => action === 'delete'
+const actionVariant = action => ['delete', 'delete-codex'].includes(action)
   ? 'destructive'
   : action === 'sync-codex' ? 'default' : 'secondary'
 const requiresConfirmation = (row, action) => CONFIRMED_ACTIONS.has(action)
@@ -203,6 +219,7 @@ function mutationBody(action, row, confirm) {
   return {
     source: sourceOf(row),
     name: row.name,
+    ...(action === 'delete-codex' ? { relative_path: row.relativePath } : {}),
     ...(confirm ? { confirm } : {}),
     force: action === 'sync-codex' && Boolean(confirm)
   }
@@ -308,10 +325,10 @@ function ToneBadge({ children, tone }) {
 
 function Stat({ label, value }) {
   return jsxs('div', {
-    className: 'min-w-24 rounded-md border border-(--ui-stroke-secondary) px-3 py-2',
+    className: 'flex min-w-24 items-baseline gap-2 py-1',
     children: [
       jsx('div', { className: 'text-xs text-(--ui-text-tertiary)', children: label }),
-      jsx('div', { className: 'mt-1 text-xl font-semibold tabular-nums', children: value })
+      jsx('div', { className: 'text-lg font-semibold tabular-nums', children: value })
     ]
   })
 }
@@ -420,15 +437,29 @@ function ConfirmOverlay({ busy, onCancel, onConfirm, pending, t }) {
           className: 'mt-3 block break-all rounded border border-(--ui-stroke-secondary) px-2 py-1.5 text-sm',
           children: pending.row.name
         }),
-        jsx(Input, {
-          autoFocus: true,
-          className: 'mt-3',
-          disabled: busy,
-          placeholder: t('confirmPlaceholder'),
-          value,
-          onChange: event => setValue(event.target.value),
-          onKeyDown: event => event.key === 'Enter' && valid && onConfirm(value)
-        }),
+        jsxs('div', { className: 'mt-3 flex items-center gap-2', children: [
+          jsx(Input, {
+            autoFocus: true,
+            className: 'min-w-0 flex-1',
+            disabled: busy,
+            placeholder: t('confirmPlaceholder'),
+            value,
+            onChange: event => setValue(event.target.value),
+            onKeyDown: event => event.key === 'Enter' && valid && onConfirm(value)
+          }),
+          jsx(Button, {
+            'aria-label': t('confirmFill'),
+            disabled: busy,
+            size: 'sm',
+            title: t('confirmFill'),
+            variant: 'secondary',
+            onClick: () => setValue(pending.row.name),
+            children: jsxs(Fragment, { children: [
+              jsx(Codicon, { name: 'edit' }),
+              ` ${t('confirmFill')}`
+            ] })
+          })
+        ] }),
         jsxs('footer', { className: 'mt-4 flex justify-end gap-2', children: [
           jsx(Button, { disabled: busy, variant: 'ghost', onClick: onCancel, children: t('cancel') }),
           jsx(Button, {
@@ -517,7 +548,7 @@ function History({ history, t }) {
   })
 }
 
-function CodexSkills({ path, rows, t }) {
+function CodexSkills({ busy, onAction, path, rows, t }) {
   return jsxs('details', {
     className: 'rounded-md border border-(--ui-stroke-secondary)',
     open: true,
@@ -535,27 +566,45 @@ function CodexSkills({ path, rows, t }) {
       jsxs('div', { className: 'space-y-3 border-t border-(--ui-stroke-secondary) p-3', children: [
         jsx('code', { className: 'block break-all text-xs text-(--ui-text-tertiary)', children: path || '-' }),
         rows.length ? jsx('div', {
-          className: 'grid gap-2 md:grid-cols-2',
-          children: rows.map(row => jsxs('article', {
-            className: 'min-w-0 rounded border border-(--ui-stroke-secondary) p-3',
-            children: [
-              jsxs('div', { className: 'flex min-w-0 items-center justify-between gap-2', children: [
-                jsx('strong', { className: 'min-w-0 break-all text-sm font-medium', children: row.name }),
-                jsx(Badge, {
-                  className: 'shrink-0 font-normal',
-                  children: t(`codexList.${row.kind === 'system' ? 'system' : 'user'}`)
-                })
-              ] }),
-              jsx('p', {
-                className: 'mt-1 line-clamp-2 break-words text-sm leading-5 text-(--ui-text-secondary)',
-                children: row.description || t('noDescription')
-              }),
-              jsx('code', {
-                className: 'mt-2 block break-all text-xs text-(--ui-text-tertiary)',
-                children: row.relativePath
-              })
-            ]
-          }, row.relativePath))
+          className: 'overflow-x-auto border border-(--ui-stroke-secondary)',
+          children: jsxs('table', { className: 'w-full min-w-[46rem] border-collapse text-sm', children: [
+            jsx('thead', {
+              className: 'bg-(--ui-bg-secondary) text-left text-xs text-(--ui-text-tertiary)',
+              children: jsx('tr', { children: [
+                jsx('th', { className: 'px-3 py-2 font-medium', children: t('table.skill') }),
+                jsx('th', { className: 'px-3 py-2 font-medium', children: t('table.description') }),
+                jsx('th', { className: 'px-3 py-2 font-medium', children: t('table.path') }),
+                jsx('th', { className: 'px-3 py-2 text-right font-medium', children: t('table.actions') })
+              ] })
+            }),
+            jsx('tbody', {
+              className: 'divide-y divide-(--ui-stroke-secondary)',
+              children: rows.map(row => jsx('tr', {
+                className: 'align-top hover:bg-(--ui-bg-secondary)',
+                children: [
+                  jsx('td', { className: 'px-3 py-2 font-medium', children: row.name }),
+                  jsx('td', {
+                    className: 'max-w-sm px-3 py-2 text-(--ui-text-secondary)',
+                    children: row.description || t('noDescription')
+                  }),
+                  jsx('td', {
+                    className: 'px-3 py-2',
+                    children: jsx('code', { className: 'break-all text-xs', children: row.relativePath })
+                  }),
+                  jsx('td', {
+                    className: 'px-3 py-2 text-right',
+                    children: jsx(Button, {
+                      disabled: busy,
+                      size: 'sm',
+                      variant: 'destructive',
+                      onClick: () => onAction(row, 'delete-codex'),
+                      children: t('actions.delete-codex')
+                    })
+                  })
+                ]
+              }, row.relativePath))
+            })
+          ] })
         }) : jsx('p', {
           className: 'py-4 text-center text-sm text-(--ui-text-tertiary)',
           children: t('codexList.empty')
@@ -594,7 +643,7 @@ function PageHeader({ counts, fetching, onRefresh, onUpdate, total, t, updating 
           })
         ] })
       ] }),
-      jsxs('div', { className: 'mt-4 flex flex-wrap gap-2', children: [
+      jsxs('div', { className: 'mt-4 flex flex-wrap gap-x-6 gap-y-1', children: [
         jsx(Stat, { label: t('stats.total'), value: total }),
         jsx(Stat, { label: t('stats.builtin'), value: counts.builtin || 0 }),
         jsx(Stat, { label: t('stats.community'), value: counts['hub-installed'] || 0 }),
@@ -664,44 +713,64 @@ function FilterPanel({ categories, counts, filters, missingCount, onChange, rows
   })
 }
 
-function SkillCard({ busy, language, onAction, onSelect, row, t }) {
-  return jsxs('article', {
-    className: 'grid gap-3 rounded-md border border-(--ui-stroke-secondary) p-3 hover:border-(--ui-stroke-primary) md:grid-cols-[minmax(0,1fr)_auto]',
-    children: [
-      jsxs('button', {
-        className: 'min-w-0 text-left',
-        type: 'button',
-        onClick: () => onSelect(row),
-        children: [
-          jsx('strong', { className: 'block break-all text-sm font-medium', children: row.name }),
-          jsx('p', {
-            className: 'mt-1 line-clamp-2 break-words text-sm leading-5 text-(--ui-text-secondary)',
-            children: descriptionOf(row, language) || t('noDescription')
-          }),
-          jsxs('div', { className: 'mt-2 flex flex-wrap gap-1.5', children: [
-            jsx(ToneBadge, { tone: sourceOf(row), children: t(`sources.${sourceOf(row)}`) }),
-            jsx(ToneBadge, { tone: row.status, children: t(`statuses.${row.status}`) }),
-            canSync(row) && row.codexInstalled
-              ? jsx(ToneBadge, { tone: 'builtin', children: t('codex.installed') })
-              : null,
-            row.category
-              ? jsx(Badge, { className: 'max-w-48 truncate font-normal', children: row.category })
-              : null
-          ] })
-        ]
-      }),
-      jsx(ActionButtons, { busy, onAction, row, t })
-    ]
-  }, `${sourceOf(row)}:${row.name}`)
-}
-
-function SkillList({ busy, language, onAction, onSelect, rows, t }) {
+function SkillTable({ busy, language, onAction, onSelect, rows, t }) {
   if (!rows.length) return jsx(EmptyState, { title: t('emptyTitle'), description: t('emptyBody') })
-  return jsx('section', {
-    className: 'grid gap-2',
-    children: rows.map(row => jsx(SkillCard, {
-      busy, language, onAction, onSelect, row, t
-    }, `${sourceOf(row)}:${row.name}`))
+  return jsx('div', {
+    className: 'overflow-x-auto border border-(--ui-stroke-secondary)',
+    children: jsxs('table', { className: 'w-full min-w-[72rem] border-collapse text-sm', children: [
+      jsx('thead', {
+        className: 'bg-(--ui-bg-secondary) text-left text-xs text-(--ui-text-tertiary)',
+        children: jsx('tr', { children: [
+          jsx('th', { className: 'px-3 py-2 font-medium', children: t('table.skill') }),
+          jsx('th', { className: 'px-3 py-2 font-medium', children: t('table.description') }),
+          jsx('th', { className: 'px-3 py-2 font-medium', children: t('table.source') }),
+          jsx('th', { className: 'px-3 py-2 font-medium', children: t('table.category') }),
+          jsx('th', { className: 'px-3 py-2 font-medium', children: t('table.status') }),
+          jsx('th', { className: 'px-3 py-2 font-medium', children: t('table.codex') }),
+          jsx('th', { className: 'px-3 py-2 text-right font-medium', children: t('table.actions') })
+        ] })
+      }),
+      jsx('tbody', {
+        className: 'divide-y divide-(--ui-stroke-secondary)',
+        children: rows.map(row => jsx('tr', {
+          className: 'align-top hover:bg-(--ui-bg-secondary)',
+          children: [
+            jsx('td', {
+              className: 'px-3 py-2',
+              children: jsx('button', {
+                className: 'break-all text-left font-medium hover:underline',
+                type: 'button',
+                onClick: () => onSelect(row),
+                children: row.name
+              })
+            }),
+            jsx('td', {
+              className: 'max-w-sm px-3 py-2 text-(--ui-text-secondary)',
+              children: descriptionOf(row, language) || t('noDescription')
+            }),
+            jsx('td', {
+              className: 'px-3 py-2',
+              children: jsx(ToneBadge, { tone: sourceOf(row), children: t(`sources.${sourceOf(row)}`) })
+            }),
+            jsx('td', { className: 'px-3 py-2', children: row.category || t('root') }),
+            jsx('td', {
+              className: 'px-3 py-2',
+              children: jsx(ToneBadge, { tone: row.status, children: t(`statuses.${row.status}`) })
+            }),
+            jsx('td', {
+              className: 'px-3 py-2',
+              children: canSync(row)
+                ? t(row.codexInstalled ? 'codex.installed' : 'codex.notInstalled')
+                : '-'
+            }),
+            jsx('td', {
+              className: 'px-3 py-2',
+              children: jsx(ActionButtons, { busy, onAction, row, t })
+            })
+          ]
+        }, `${sourceOf(row)}:${row.name}`))
+      })
+    ] })
   })
 }
 
@@ -782,7 +851,7 @@ function SkillManagePage() {
             visibleCount: view.visible.length,
             t
           }),
-          jsx(SkillList, {
+          jsx(SkillTable, {
             busy: mutation.isPending,
             language,
             onAction: beginAction,
@@ -791,6 +860,8 @@ function SkillManagePage() {
             t
           }),
           jsx(CodexSkills, {
+            busy: mutation.isPending,
+            onAction: beginAction,
             path: data.meta?.codexSkillsDir,
             rows: asArray(data.codexSkills),
             t
@@ -847,7 +918,7 @@ export default {
         id: 'open',
         area: PALETTE_AREA,
         data: {
-          id: 'desktop-skill-manager.open',
+          id: 'skill-manager.open',
           label: ctx.i18n.t('open'),
           keywords: ['skill', 'manage', '技能'],
           run: () => host.navigate(ROUTE)

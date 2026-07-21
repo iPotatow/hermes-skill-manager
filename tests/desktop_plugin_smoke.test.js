@@ -3,14 +3,14 @@ const fs = require('node:fs')
 const path = require('node:path')
 const test = require('node:test')
 
-const pluginPath = path.join(__dirname, '..', 'desktop-plugins', 'desktop-skill-manager', 'plugin.js')
+const pluginPath = path.join(__dirname, '..', 'desktop-plugins', 'skill-manager', 'plugin.js')
 const source = fs.readFileSync(pluginPath, 'utf8')
 
 test('desktop plugin stays within the uncompiled runtime contract', () => {
   const imports = [...source.matchAll(/from\s+['"]([^'"]+)['"]/g)].map(match => match[1])
   assert.deepEqual([...new Set(imports)].sort(), ['@hermes/plugin-sdk', 'react', 'react/jsx-runtime'])
   assert.doesNotMatch(source, /<[A-Z][A-Za-z0-9]*[\s/>]/)
-  assert.match(source, /const ID = 'desktop-skill-manager'/)
+  assert.match(source, /const ID = 'skill-manager'/)
 })
 
 test('desktop plugin registers all navigation surfaces in one contribution batch', () => {
@@ -38,13 +38,28 @@ test('plugin update has a dedicated endpoint and an explicit second confirmation
 })
 
 test('desktop action policy preserves every backend operation and confirmation boundary', () => {
-  for (const action of ['delete', 'reset', 'restore', 'update', 'sync-codex']) {
+  for (const action of ['delete', 'delete-codex', 'reset', 'restore', 'update', 'sync-codex']) {
     assert.match(source, new RegExp(action))
   }
   assert.match(source, /\['hub-installed', 'local'\]\.includes\(sourceOf\(row\)\)/)
   assert.match(source, /force:\s*action === 'sync-codex' && Boolean\(confirm\)/)
-  assert.match(source, /CONFIRMED_ACTIONS = new Set\(\['delete', 'reset'\]\)/)
+  assert.match(source, /CONFIRMED_ACTIONS = new Set\(\['delete', 'delete-codex', 'reset'\]\)/)
   assert.match(source, /payload\.status === 409/)
+})
+
+test('desktop renders Hermes and Codex user skills as tables without skill cards', () => {
+  assert.match(source, /function SkillTable/)
+  assert.match(source, /function CodexSkills/)
+  assert.match(source, /jsxs\('table'/)
+  assert.match(source, /onAction\(row, 'delete-codex'\)/)
+  assert.doesNotMatch(source, /function SkillCard/)
+  assert.doesNotMatch(source, /function SkillList/)
+  assert.doesNotMatch(source, /codexList\.(?:system|user)/)
+})
+
+test('confirmation dialog can fill the exact skill name with one click', () => {
+  assert.match(source, /confirmFill: '填入名称'/)
+  assert.match(source, /onClick:\s*\(\) => setValue\(pending\.row\.name\)/)
 })
 
 test('desktop copy is bilingual and includes backend-mount guidance', () => {

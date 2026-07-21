@@ -162,6 +162,19 @@ class SkillManager:
         self._record("plugin-update", {"name": PLUGIN_ID, "kind": "plugin"})
         return result
 
+    def delete_codex(self, name: str, relative_path: str, confirm: str) -> dict[str, Any]:
+        """Delete one discovered Codex user skill without exposing system skills."""
+
+        self._confirm(confirm, name)
+        with self._sync_lock:
+            row = self.inventory_reader.find_codex_user(relative_path, name)
+            target = self.inventory_reader.safe_codex_relative_target(row["relativePath"])
+            if target.is_symlink() or not target.is_dir() or not (target / "SKILL.md").is_file():
+                raise SkillManagerError(404, "Codex 用户技能目录不存在")
+            shutil.rmtree(target)
+        self._record("delete-codex", row)
+        return {"ok": True, "skill": row}
+
     def sync_codex(
         self,
         source: str,

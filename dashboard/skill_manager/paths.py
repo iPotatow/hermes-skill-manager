@@ -70,11 +70,11 @@ class SkillPaths:
 
     @property
     def state(self) -> Path:
-        return self.home / "state" / "plugins" / "desktop-skill-manager.json"
+        return self.home / "state" / "plugins" / f"{PLUGIN_ID}.json"
 
     @property
     def legacy_state(self) -> Path:
-        return self.plugin_root / "state.json"
+        return self.home / "state" / "plugins" / "desktop-skill-manager.json"
 
     @property
     def builtin_catalog(self) -> Path:

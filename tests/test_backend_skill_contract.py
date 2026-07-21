@@ -17,22 +17,22 @@ BACKEND = DASHBOARD / "plugin_api.py"
 if str(DASHBOARD) not in sys.path:
     sys.path.insert(0, str(DASHBOARD))
 
-from desktop_skill_manager.errors import SkillManagerError
-from desktop_skill_manager.filesystem import (
+from skill_manager.errors import SkillManagerError
+from skill_manager.filesystem import (
     copy_file_atomic,
     copy_skill,
     safe_descendant,
     validate_sync_source,
 )
-from desktop_skill_manager.inventory import SkillInventory, capture
-from desktop_skill_manager.paths import SkillPaths
-from desktop_skill_manager.runtime import HermesRuntime
-from desktop_skill_manager.service import SkillManager
-from desktop_skill_manager.state import StateStore
+from skill_manager.inventory import SkillInventory, capture
+from skill_manager.paths import SkillPaths
+from skill_manager.runtime import HermesRuntime
+from skill_manager.service import SkillManager
+from skill_manager.state import StateStore
 
 
 def load_backend():
-    spec = importlib.util.spec_from_file_location("desktop_skill_manager_adapter_test", BACKEND)
+    spec = importlib.util.spec_from_file_location("skill_manager_adapter_test", BACKEND)
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
     spec.loader.exec_module(module)
@@ -135,7 +135,7 @@ class BackendSkillContractTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             plugin_root = root / "checkout"
-            source = plugin_root / "desktop-plugins" / "desktop-skill-manager" / "plugin.js"
+            source = plugin_root / "desktop-plugins" / "skill-manager" / "plugin.js"
             target = root / "active" / "plugin.js"
             source.parent.mkdir(parents=True)
             source.write_text("updated entry", encoding="utf-8")
@@ -151,7 +151,7 @@ class BackendSkillContractTest(unittest.TestCase):
                 "hermes_cli.plugins_cmd": plugins_cmd,
             }):
                 result = HermesRuntime.update_plugin(
-                    "desktop-skill-manager", plugin_root, target
+                    "skill-manager", plugin_root, target
                 )
 
             self.assertEqual(target.read_text(encoding="utf-8"), "updated entry")
@@ -214,7 +214,7 @@ class BackendSkillContractTest(unittest.TestCase):
                 with self.subTest(value=value), self.assertRaises(SkillManagerError):
                     safe_descendant(root, value, "unsafe")
 
-    def test_codex_inventory_lists_user_and_system_skills(self):
+    def test_codex_inventory_lists_only_user_skills(self):
         with tempfile.TemporaryDirectory() as directory:
             paths = SkillPaths(codex_home_override=Path(directory) / "codex")
             user = paths.codex_skills / "my-skill"
@@ -232,10 +232,44 @@ class BackendSkillContractTest(unittest.TestCase):
 
             rows = SkillInventory(paths).codex_inventory([])
             by_name = {row["name"]: row for row in rows}
-            self.assertEqual(set(by_name), {"My Skill", "helper"})
+            self.assertEqual(set(by_name), {"My Skill"})
             self.assertEqual(by_name["My Skill"]["kind"], "user")
-            self.assertEqual(by_name["helper"]["kind"], "system")
-            self.assertEqual(by_name["helper"]["relativePath"], ".system/helper")
+
+    def test_codex_delete_requires_confirmation_and_cannot_reach_system_skills(self):
+        with tempfile.TemporaryDirectory() as directory:
+            paths = SkillPaths(codex_home_override=Path(directory) / "codex")
+            user = paths.codex_skills / "my-skill"
+            system = paths.codex_skills / ".system" / "helper"
+            user.mkdir(parents=True)
+            system.mkdir(parents=True)
+            (user / "SKILL.md").write_text(
+                "---\nname: My Skill\ndescription: User\n---\n",
+                encoding="utf-8",
+            )
+            (system / "SKILL.md").write_text(
+                "---\nname: helper\ndescription: System\n---\n",
+                encoding="utf-8",
+            )
+            state = StateStub()
+            runtime = RuntimeStub()
+            manager = SkillManager(paths=paths, state=state, runtime=runtime)
+
+            with self.assertRaises(SkillManagerError) as raised:
+                manager.delete_codex("My Skill", "my-skill", "wrong")
+            self.assertEqual(raised.exception.status_code, 400)
+            self.assertTrue(user.exists())
+
+            with self.assertRaises(SkillManagerError) as raised:
+                manager.delete_codex("helper", ".system/helper", "helper")
+            self.assertEqual(raised.exception.status_code, 404)
+            self.assertTrue(system.exists())
+
+            result = manager.delete_codex("My Skill", "my-skill", "My Skill")
+            self.assertTrue(result["ok"])
+            self.assertFalse(user.exists())
+            self.assertTrue(system.exists())
+            self.assertEqual(runtime.clear_count, 0)
+            self.assertEqual(state.events[0]["action"], "delete-codex")
 
     def test_available_actions_are_explicit_and_source_accurate(self):
         actions = SkillInventory.available_actions
@@ -268,7 +302,7 @@ class BackendSkillContractTest(unittest.TestCase):
 
     def test_state_store_is_atomic_and_shared_across_request_instances(self):
         with tempfile.TemporaryDirectory() as directory:
-            path = Path(directory) / "state" / "plugins" / "desktop-skill-manager.json"
+            path = Path(directory) / "state" / "plugins" / "skill-manager.json"
             stores = [StateStore(path) for _index in range(20)]
             threads = [
                 threading.Thread(target=store.record, args=({"action": "update", "name": str(index)},))
@@ -282,6 +316,22 @@ class BackendSkillContractTest(unittest.TestCase):
             state = json.loads(path.read_text(encoding="utf-8"))
             self.assertEqual(len(state["history"]), 20)
             self.assertFalse(list(path.parent.glob(".*.tmp")))
+
+    def test_renamed_state_store_reads_legacy_plugin_history(self):
+        with tempfile.TemporaryDirectory() as directory:
+            paths = SkillPaths(home_override=Path(directory) / "hermes")
+            paths.legacy_state.parent.mkdir(parents=True)
+            paths.legacy_state.write_text(
+                json.dumps({"version": 1, "history": [{"action": "update", "name": "old"}]}),
+                encoding="utf-8",
+            )
+
+            store = StateStore(paths.state, paths.legacy_state)
+            self.assertEqual(store.load()["history"][0]["name"], "old")
+            store.record({"action": "delete-codex", "name": "new"})
+
+            self.assertTrue(paths.state.is_file())
+            self.assertEqual(store.load()["history"][1]["name"], "old")
 
     def test_history_failure_does_not_mask_completed_operation(self):
         store = StateStore(Path("/unreachable/state.json"))
@@ -376,14 +426,14 @@ class BackendSkillContractTest(unittest.TestCase):
             self.assertEqual(raised.exception.status_code, 400)
             self.assertEqual(runtime.calls, [])
 
-            result = manager.update_plugin("desktop-skill-manager")
+            result = manager.update_plugin("skill-manager")
 
             self.assertTrue(result["ok"])
             self.assertEqual(runtime.calls, [(
                 "plugin-update",
-                "desktop-skill-manager",
+                "skill-manager",
                 ROOT,
-                paths.home / "desktop-plugins" / "desktop-skill-manager" / "plugin.js",
+                paths.home / "desktop-plugins" / "skill-manager" / "plugin.js",
             )])
             self.assertEqual(state.events[0]["action"], "plugin-update")
 
@@ -429,7 +479,7 @@ class BackendSkillContractTest(unittest.TestCase):
         module = load_backend()
         expected_routes = {
             "/inventory", "/delete", "/reset", "/restore", "/update",
-            "/plugin-update", "/sync-codex",
+            "/plugin-update", "/delete-codex", "/sync-codex",
         }
         if hasattr(module.router, "routes"):
             self.assertEqual({route.path for route in module.router.routes}, expected_routes)
@@ -451,11 +501,17 @@ class BackendSkillContractTest(unittest.TestCase):
 
     def test_version_metadata_and_documentation_stay_in_sync(self):
         plugin_yaml = (ROOT / "plugin.yaml").read_text(encoding="utf-8")
+        plugin_name = re.search(r"^name:\s*(\S+)", plugin_yaml, re.MULTILINE).group(1)
         version = re.search(r"^version:\s*(\S+)", plugin_yaml, re.MULTILINE).group(1)
-        manifest_version = json.loads(
-            (DASHBOARD / "manifest.json").read_text(encoding="utf-8")
-        )["version"]
-        self.assertEqual(version, manifest_version)
+        manifest = json.loads((DASHBOARD / "manifest.json").read_text(encoding="utf-8"))
+        desktop_source = (ROOT / "desktop-plugins" / plugin_name / "plugin.js").read_text(
+            encoding="utf-8"
+        )
+        self.assertEqual(plugin_name, "skill-manager")
+        self.assertEqual(plugin_name, manifest["name"])
+        self.assertEqual(version, manifest["version"])
+        self.assertIn("const ID = 'skill-manager'", desktop_source)
+        self.assertIn("iPotatow/hermes-skill-manager", (ROOT / "README.md").read_text(encoding="utf-8"))
         self.assertIn(f"版本：`{version}`", (ROOT / "README.md").read_text(encoding="utf-8"))
         self.assertIn(f"Version: `{version}`", (ROOT / "README_EN.md").read_text(encoding="utf-8"))
 
@@ -466,7 +522,7 @@ class BackendSkillContractTest(unittest.TestCase):
         self.assertNotIn("entry", manifest)
 
     def test_profile_skill_resolution_uses_supported_hermes_helper(self):
-        source = (DASHBOARD / "desktop_skill_manager" / "paths.py").read_text(encoding="utf-8")
+        source = (DASHBOARD / "skill_manager" / "paths.py").read_text(encoding="utf-8")
         self.assertIn("from tools.skills_tool import _skills_dir", source)
         self.assertNotIn("_compute_relative_dest", source)
 

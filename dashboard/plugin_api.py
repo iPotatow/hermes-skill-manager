@@ -1,7 +1,7 @@
 """FastAPI adapter for the Hermes Desktop skill manager.
 
 Hermes imports this file directly from ``dashboard/manifest.json``. Business
-rules live in ``desktop_skill_manager`` so this adapter only validates request
+rules live in ``skill_manager`` so this adapter only validates request
 shape and translates expected failures into HTTP responses.
 """
 
@@ -40,8 +40,8 @@ _ADDED_DASHBOARD_PATH = str(_DASHBOARD_DIR) not in sys.path
 if _ADDED_DASHBOARD_PATH:
     sys.path.insert(0, str(_DASHBOARD_DIR))
 try:
-    from desktop_skill_manager.errors import SkillManagerError
-    from desktop_skill_manager.service import SkillManager
+    from skill_manager.errors import SkillManagerError
+    from skill_manager.service import SkillManager
 finally:
     if _ADDED_DASHBOARD_PATH:
         sys.path.remove(str(_DASHBOARD_DIR))
@@ -56,6 +56,7 @@ class SkillAction(BaseModel):
     name: str = ""
     confirm: str = ""
     category: str = ""  # retained for v1.x clients; resolution is server-owned
+    relative_path: str = ""
     force: bool = False
 
 
@@ -100,6 +101,15 @@ async def update_skill(action: SkillAction) -> dict[str, Any]:
 @router.post("/plugin-update")
 async def update_plugin(action: SkillAction) -> dict[str, Any]:
     return _run(lambda: _manager().update_plugin(action.confirm))
+
+
+@router.post("/delete-codex")
+async def delete_codex_skill(action: SkillAction) -> dict[str, Any]:
+    return _run(lambda: _manager().delete_codex(
+        action.name,
+        action.relative_path,
+        action.confirm,
+    ))
 
 
 @router.post("/sync-codex")

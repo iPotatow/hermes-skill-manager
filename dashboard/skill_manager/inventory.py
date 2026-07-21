@@ -79,6 +79,8 @@ class SkillInventory:
         return value if isinstance(value, str) and value else fallback
 
     def codex_inventory(self, diagnostics: list[Diagnostic]) -> list[dict[str, Any]]:
+        """Return user-installed Codex skills; system skills stay private."""
+
         root = self.paths.codex_skills.expanduser()
         if not root.exists():
             return []
@@ -92,11 +94,13 @@ class SkillInventory:
                 if not resolved.is_relative_to(root):
                     continue
                 relative_dir = resolved.parent.relative_to(root)
+                if not relative_dir.parts or relative_dir.parts[0] == ".system":
+                    continue
                 content = resolved.read_text(encoding="utf-8")
                 rows.append({
                     "name": self._frontmatter_value(content, "name") or resolved.parent.name,
                     "description": self._frontmatter_value(content, "description")[:500],
-                    "kind": "system" if relative_dir.parts and relative_dir.parts[0] == ".system" else "user",
+                    "kind": "user",
                     "path": str(resolved.parent),
                     "relativePath": relative_dir.as_posix(),
                     "updatedAt": datetime.fromtimestamp(resolved.stat().st_mtime, timezone.utc).isoformat(),
@@ -107,7 +111,6 @@ class SkillInventory:
                     "message": str(exc) or exc.__class__.__name__,
                 })
         return sorted(rows, key=lambda row: (
-            row["kind"],
             str(row["name"]).lower(),
             row["relativePath"],
         ))
@@ -179,6 +182,25 @@ class SkillInventory:
             "Codex 技能名或路径不安全",
             create_root=create_root,
         )
+
+    def safe_codex_relative_target(self, relative_path: str) -> Path:
+        relative = Path(relative_path)
+        if relative.parts and relative.parts[0] == ".system":
+            raise SkillManagerError(400, "Codex 系统技能不允许删除")
+        return safe_descendant(
+            self.paths.codex_skills,
+            relative_path,
+            "Codex 技能路径不安全",
+        )
+
+    def find_codex_user(self, relative_path: str, name: str) -> dict[str, Any]:
+        diagnostics: list[Diagnostic] = []
+        for row in self.codex_inventory(diagnostics):
+            if row["relativePath"] == relative_path and row["name"] == name:
+                return row
+        if diagnostics:
+            raise self._discovery_error(diagnostics)
+        raise SkillManagerError(404, f"未找到 Codex 用户技能：{name}")
 
     def _description_from_disk(self, skill_dir: Path) -> str:
         try:
