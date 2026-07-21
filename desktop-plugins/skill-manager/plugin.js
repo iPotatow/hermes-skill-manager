@@ -12,7 +12,6 @@ const ROUTE = '/skill-manager'
 const QUERY_KEY = [ID, 'inventory']
 const REFRESH_INTERVAL_MS = 15000
 const SOURCES = ['all', 'builtin', 'hub-installed', 'local', 'codex']
-const STATUSES = ['all', 'enabled', 'disabled', 'deleted']
 const CONFIRMED_ACTIONS = new Set(['delete', 'delete-codex', 'reset'])
 const TONE_CLASSES = {
   enabled: 'text-foreground border-(--ui-stroke-primary)',
@@ -28,7 +27,7 @@ const MESSAGES = {
     title: 'Skill Manager',
     subtitle: 'Manage Hermes skills and sync them into Codex.',
     search: 'Search',
-    searchPlaceholder: 'Search skills, descriptions, sources, statuses, or paths',
+    searchPlaceholder: 'Search skills, descriptions, sources, or paths',
     refresh: 'Refresh',
     refreshing: 'Refreshing',
     pluginUpdateButton: 'Update plugin',
@@ -101,7 +100,7 @@ const MESSAGES = {
     title: '技能管理',
     subtitle: '管理 Hermes 技能，并将它们同步到 Codex。',
     search: '搜索',
-    searchPlaceholder: '搜索技能、简介、来源、状态或路径',
+    searchPlaceholder: '搜索技能、简介、来源或路径',
     refresh: '刷新',
     refreshing: '刷新中',
     pluginUpdateButton: '更新插件',
@@ -240,14 +239,13 @@ function countSources(rows) {
 }
 
 function filterRows(rows, filters) {
-  const { category, language, query, source, status, t } = filters
+  const { category, language, query, source, t } = filters
   const needle = query.trim().toLowerCase()
   return rows.filter(row => {
     if (source !== 'all' && sourceOf(row) !== source) return false
-    if (status !== 'all' && row.status !== status) return false
     if (category !== 'all' && (row.category || t('root')) !== category) return false
     return !needle || [
-      row.name, row.category, row.source, row.trustLevel, row.status,
+      row.name, row.category, row.source, row.trustLevel,
       row.installPath, descriptionOf(row, language)
     ].join('\n').toLowerCase().includes(needle)
   }).sort((left, right) => String(left.name).localeCompare(
@@ -277,7 +275,7 @@ function useInventoryView(data, filters, showDeleted, t) {
   const rowCounts = useMemo(() => countSources(rows), [rows])
   const visible = useMemo(
     () => filterRows(rows, { ...filters, t }),
-    [rows, filters.query, filters.source, filters.status, filters.category, filters.language, t]
+    [rows, filters.query, filters.source, filters.category, filters.language, t]
   )
   const codexVisible = useMemo(
     () => filterCodexRows(codex, filters.query),
@@ -714,16 +712,6 @@ function FilterPanel({ categories, codexCount, counts, filters, missingCount, on
           ...categories.map(value => jsx('option', { value, children: value }, value))
         ]
       }),
-      showingCodex ? null : jsx('select', {
-        'aria-label': t('fields.status'),
-        className: 'h-8 w-[10rem] shrink-0 rounded border border-(--ui-stroke-secondary) bg-transparent px-2 text-sm',
-        value: filters.status,
-        onChange: event => onChange('status', event.target.value),
-        children: STATUSES.map(value => jsx('option', {
-          value,
-          children: t(`statuses.${value}`)
-        }, value))
-      }),
       showingCodex ? null : jsxs('label', {
         className: 'flex min-h-8 shrink-0 items-center gap-2 text-sm',
         children: [
@@ -813,7 +801,7 @@ function SkillTable({ busy, language, onAction, onSelect, rows, t }) {
 function SkillManagePage() {
   const t = usePluginI18n(ID)
   const [filters, setFilters] = useState({
-    query: '', source: 'all', status: 'all', category: 'all',
+    query: '', source: 'all', category: 'all',
     showDeleted: false
   })
   const [selected, setSelected] = useState(null)

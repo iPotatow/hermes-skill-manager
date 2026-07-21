@@ -81,6 +81,9 @@ test('search and filters stay on one horizontally scrollable row', () => {
   assert.match(source, /className: 'flex shrink-0 gap-2'/)
   assert.match(source, /className: 'w-\[22rem\] shrink-0'/)
   assert.doesNotMatch(source, /lg:grid-cols-\[minmax\(16rem,1fr\)_12rem_12rem_auto\]/)
+  assert.doesNotMatch(source, /const STATUSES/)
+  assert.doesNotMatch(source, /filters\.status/)
+  assert.doesNotMatch(source, /onChange\('status'/)
 })
 
 test('confirmation dialog can fill the exact skill name with one click', () => {

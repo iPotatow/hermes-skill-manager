@@ -9,7 +9,7 @@ English | [简体中文](README.md)
 - Native Desktop sidebar page and `⌘K` command
 - The Dashboard manifest mounts backend APIs without adding a Dashboard sidebar item
 - Compact tables for Hermes and Codex skills, with no skill-card layout
-- Full-text search with source, category, and status filters in one toolbar row
+- Full-text search with source and category filters in one toolbar row
 - Built-in Chinese descriptions come from the [official Hermes Chinese skills catalog](https://hermes-agent.nousresearch.com/docs/zh-Hans/reference/skills-catalog), with background refresh and an offline snapshot
 - Skill details, recent actions, diagnostics, and automatic refresh
 - A page-level plugin update button with an explicit second confirmation and automatic Desktop entry hot reload
@@ -89,4 +89,4 @@ node --test tests/desktop_plugin_smoke.test.js
 python3 -m unittest discover -s tests -v
 ```
 
-Plugin ID: `skill-manager` · Desktop route: `/skill-manager` · Version: `1.5.7`
+Plugin ID: `skill-manager` · Desktop route: `/skill-manager` · Version: `1.5.8`
