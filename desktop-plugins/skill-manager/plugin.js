@@ -11,7 +11,7 @@ const ID = 'skill-manager'
 const ROUTE = '/skill-manager'
 const QUERY_KEY = [ID, 'inventory']
 const REFRESH_INTERVAL_MS = 15000
-const SOURCES = ['all', 'builtin', 'hub-installed', 'local']
+const SOURCES = ['all', 'builtin', 'hub-installed', 'local', 'codex']
 const STATUSES = ['all', 'enabled', 'disabled', 'deleted']
 const CONFIRMED_ACTIONS = new Set(['delete', 'delete-codex', 'reset'])
 const TONE_CLASSES = {
@@ -61,7 +61,10 @@ const MESSAGES = {
     nav: 'Skill Manager',
     open: 'Open Skill Manager',
     stats: { total: 'Total', builtin: 'Built-in', community: 'Community', local: 'Local' },
-    sources: { all: 'All', builtin: 'Built-in', 'hub-installed': 'Community', local: 'Local' },
+    sources: {
+      all: 'All', builtin: 'Built-in', 'hub-installed': 'Community',
+      local: 'Local', codex: 'Codex'
+    },
     statuses: { all: 'All statuses', enabled: 'Enabled', disabled: 'Disabled', deleted: 'Deleted' },
     trust: { builtin: 'Built-in', official: 'Official', community: 'Community', local: 'Local' },
     codex: { installed: 'In Codex', notInstalled: 'Not in Codex' },
@@ -132,7 +135,10 @@ const MESSAGES = {
     nav: '技能管理',
     open: '打开技能管理',
     stats: { total: '总数', builtin: '内建', community: '社区', local: '本地' },
-    sources: { all: '全部', builtin: '内建', 'hub-installed': '社区', local: '本地' },
+    sources: {
+      all: '全部', builtin: '内建', 'hub-installed': '社区',
+      local: '本地', codex: 'Codex'
+    },
     statuses: { all: '全部状态', enabled: '启用', disabled: '停用', deleted: '已删除' },
     trust: { builtin: '内建', official: '官方', community: '社区', local: '本地' },
     codex: { installed: '已在 Codex', notInstalled: '未在 Codex' },
@@ -251,9 +257,17 @@ function filterRows(rows, filters) {
   ))
 }
 
+function filterCodexRows(rows, query) {
+  const needle = query.trim().toLowerCase()
+  return rows.filter(row => !needle || [
+    row.name, row.description, row.relativePath, row.path
+  ].join('\n').toLowerCase().includes(needle))
+}
+
 function useInventoryView(data, filters, showDeleted, t) {
   const installed = asArray(data.skills)
   const missing = asArray(data.missingBuiltinSkills)
+  const codex = asArray(data.codexSkills)
   const rows = showDeleted ? installed.concat(missing) : installed
   const categories = useMemo(
     () => Array.from(new Set(rows.map(row => row.category || t('root')))).sort(),
@@ -265,7 +279,14 @@ function useInventoryView(data, filters, showDeleted, t) {
     () => filterRows(rows, { ...filters, t }),
     [rows, filters.query, filters.source, filters.status, filters.category, filters.language, t]
   )
-  return { categories, installed, installedCounts, missing, rowCounts, rows, visible }
+  const codexVisible = useMemo(
+    () => filterCodexRows(codex, filters.query),
+    [codex, filters.query]
+  )
+  return {
+    categories, codex, codexVisible, installed, installedCounts,
+    missing, rowCounts, rows, visible
+  }
 }
 
 function useSkillMutation(t, onComplete, onConflict) {
@@ -548,26 +569,24 @@ function History({ history, t }) {
   })
 }
 
-function CodexSkills({ busy, onAction, path, rows, t }) {
-  return jsxs('details', {
-    className: 'rounded-md border border-(--ui-stroke-secondary)',
-    open: true,
+function CodexTable({ busy, onAction, path, rows, t }) {
+  if (!rows.length) return jsx(EmptyState, {
+    title: t('codexList.empty'),
+    description: path || '-'
+  })
+  return jsxs('section', {
+    className: 'space-y-2',
     children: [
-      jsxs('summary', {
-        className: 'flex cursor-pointer items-center justify-between gap-3 px-3 py-2 text-sm font-medium',
-        children: [
-          jsx('span', { children: t('codexList.title') }),
-          jsx('span', {
-            className: 'text-xs font-normal text-(--ui-text-tertiary)',
-            children: t('codexList.count', rows.length)
-          })
-        ]
+      jsx('code', {
+        className: 'block break-all text-xs text-(--ui-text-tertiary)',
+        children: path || '-'
       }),
-      jsxs('div', { className: 'space-y-3 border-t border-(--ui-stroke-secondary) p-3', children: [
-        jsx('code', { className: 'block break-all text-xs text-(--ui-text-tertiary)', children: path || '-' }),
-        rows.length ? jsx('div', {
-          className: 'overflow-x-auto border border-(--ui-stroke-secondary)',
-          children: jsxs('table', { className: 'w-full min-w-[46rem] border-collapse text-sm', children: [
+      jsx('div', {
+        className: 'overflow-x-auto border border-(--ui-stroke-secondary)',
+        children: jsxs('table', {
+          'aria-label': t('codexList.title'),
+          className: 'w-full min-w-[46rem] border-collapse text-sm',
+          children: [
             jsx('thead', {
               className: 'bg-(--ui-bg-secondary) text-left text-xs text-(--ui-text-tertiary)',
               children: jsx('tr', { children: [
@@ -604,12 +623,9 @@ function CodexSkills({ busy, onAction, path, rows, t }) {
                 ]
               }, row.relativePath))
             })
-          ] })
-        }) : jsx('p', {
-          className: 'py-4 text-center text-sm text-(--ui-text-tertiary)',
-          children: t('codexList.empty')
+          ]
         })
-      ] })
+      })
     ]
   })
 }
@@ -653,7 +669,8 @@ function PageHeader({ counts, fetching, onRefresh, onUpdate, total, t, updating 
   })
 }
 
-function FilterPanel({ categories, counts, filters, missingCount, onChange, rows, visibleCount, t }) {
+function FilterPanel({ categories, codexCount, counts, filters, missingCount, onChange, rows, visibleCount, t }) {
+  const showingCodex = filters.source === 'codex'
   return jsxs('section', {
     className: 'space-y-3 rounded-md border border-(--ui-stroke-secondary) p-3',
     children: [
@@ -663,11 +680,15 @@ function FilterPanel({ categories, counts, filters, missingCount, onChange, rows
           size: 'sm',
           variant: filters.source === key ? 'default' : 'secondary',
           onClick: () => onChange('source', key),
-          children: `${t(`sources.${key}`)} ${key === 'all' ? rows.length : counts[key] || 0}`
+          children: `${t(`sources.${key}`)} ${key === 'all'
+            ? rows.length
+            : key === 'codex' ? codexCount : counts[key] || 0}`
         }, key))
       }),
       jsxs('div', {
-        className: 'grid gap-2 lg:grid-cols-[minmax(16rem,1fr)_12rem_12rem_auto]',
+        className: showingCodex
+          ? 'grid gap-2'
+          : 'grid gap-2 lg:grid-cols-[minmax(16rem,1fr)_12rem_12rem_auto]',
         children: [
           jsx(Input, {
             'aria-label': t('search'),
@@ -675,7 +696,7 @@ function FilterPanel({ categories, counts, filters, missingCount, onChange, rows
             value: filters.query,
             onChange: event => onChange('query', event.target.value)
           }),
-          jsx('select', {
+          showingCodex ? null : jsx('select', {
             'aria-label': t('fields.category'),
             className: 'h-8 rounded border border-(--ui-stroke-secondary) bg-transparent px-2 text-sm',
             value: filters.category,
@@ -685,7 +706,7 @@ function FilterPanel({ categories, counts, filters, missingCount, onChange, rows
               ...categories.map(value => jsx('option', { value, children: value }, value))
             ]
           }),
-          jsx('select', {
+          showingCodex ? null : jsx('select', {
             'aria-label': t('fields.status'),
             className: 'h-8 rounded border border-(--ui-stroke-secondary) bg-transparent px-2 text-sm',
             value: filters.status,
@@ -695,7 +716,7 @@ function FilterPanel({ categories, counts, filters, missingCount, onChange, rows
               children: t(`statuses.${value}`)
             }, value))
           }),
-          jsxs('label', { className: 'flex min-h-8 items-center gap-2 text-sm', children: [
+          showingCodex ? null : jsxs('label', { className: 'flex min-h-8 items-center gap-2 text-sm', children: [
             jsx('input', {
               type: 'checkbox',
               checked: filters.showDeleted,
@@ -799,6 +820,7 @@ function SkillManagePage() {
   const data = inventory.data || {}
   const language = currentLanguage()
   const view = useInventoryView(data, { ...filters, language }, filters.showDeleted, t)
+  const showingCodex = filters.source === 'codex'
   const changeFilter = (key, value) => setFilters(current => ({ ...current, [key]: value }))
   const beginAction = (row, action) => requiresConfirmation(row, action)
     ? setPending({ row, action })
@@ -843,29 +865,31 @@ function SkillManagePage() {
           jsx(Diagnostics, { rows: asArray(data.diagnostics), t }),
           jsx(FilterPanel, {
             categories: view.categories,
+            codexCount: view.codex.length,
             counts: view.rowCounts,
             filters,
             missingCount: data.missingBuiltinCount || 0,
             onChange: changeFilter,
             rows: view.rows,
-            visibleCount: view.visible.length,
+            visibleCount: showingCodex ? view.codexVisible.length : view.visible.length,
             t
           }),
-          jsx(SkillTable, {
-            busy: mutation.isPending,
-            language,
-            onAction: beginAction,
-            onSelect: setSelected,
-            rows: view.visible,
-            t
-          }),
-          jsx(CodexSkills, {
-            busy: mutation.isPending,
-            onAction: beginAction,
-            path: data.meta?.codexSkillsDir,
-            rows: asArray(data.codexSkills),
-            t
-          }),
+          showingCodex
+            ? jsx(CodexTable, {
+                busy: mutation.isPending,
+                onAction: beginAction,
+                path: data.meta?.codexSkillsDir,
+                rows: view.codexVisible,
+                t
+              })
+            : jsx(SkillTable, {
+                busy: mutation.isPending,
+                language,
+                onAction: beginAction,
+                onSelect: setSelected,
+                rows: view.visible,
+                t
+              }),
           jsx(History, { history: asArray(data.history), t })
         ] })
       })

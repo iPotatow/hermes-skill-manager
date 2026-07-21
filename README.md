@@ -15,7 +15,7 @@
 - 内建技能重置、删除、恢复；Hub 技能重置、更新、删除；本地技能删除
 - 删除和重置要求输入完整技能名确认，确认框可一键填入名称
 - 社区和本地技能显示“同步”按钮，可一键同步到 `$CODEX_HOME/skills/<技能名>`；内建技能不显示该按钮，覆盖已有 Codex 技能时要求输入完整技能名确认
-- Codex 区域只显示 `$CODEX_HOME/skills` 下的用户技能，不显示 `.system` 系统技能，并支持安全删除用户技能
+- 顶部来源筛选在“本地”后提供“Codex”入口；点击后在主表格中显示 Codex 用户技能，不显示 `.system` 系统技能，并支持安全删除
 - 中英文界面、响应式布局及 Hermes Desktop 主题适配
 - 后端未挂载时提供明确的安装、启用和重启提示
 
@@ -86,4 +86,4 @@ node --test tests/desktop_plugin_smoke.test.js
 python3 -m unittest discover -s tests -v
 ```
 
-插件 ID：`skill-manager` · Desktop 路径：`/skill-manager` · 版本：`1.5.0`
+插件 ID：`skill-manager` · Desktop 路径：`/skill-manager` · 版本：`1.5.1`

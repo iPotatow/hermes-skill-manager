@@ -49,7 +49,7 @@ test('desktop action policy preserves every backend operation and confirmation b
 
 test('desktop renders Hermes and Codex user skills as tables without skill cards', () => {
   assert.match(source, /function SkillTable/)
-  assert.match(source, /function CodexSkills/)
+  assert.match(source, /function CodexTable/)
   assert.match(source, /jsxs\('table'/)
   assert.match(source, /onAction\(row, 'delete-codex'\)/)
   assert.doesNotMatch(source, /function SkillCard/)
@@ -63,12 +63,20 @@ test('confirmation dialog can fill the exact skill name with one click', () => {
 })
 
 test('desktop copy is bilingual and includes backend-mount guidance', () => {
-  assert.match(source, /function CodexSkills/)
+  assert.match(source, /function CodexTable/)
   assert.match(source, /codexList:/)
   assert.match(source, /'sync-codex': 'Sync'/)
   assert.match(source, /'sync-codex': '同步'/)
   assert.match(source, /backendUnavailable:/)
   assert.match(source, /ctx\.i18n\.register\(MESSAGES\)/)
+})
+
+test('Codex appears directly after Local as a source tab and swaps the main table', () => {
+  assert.match(source, /const SOURCES = \['all', 'builtin', 'hub-installed', 'local', 'codex'\]/)
+  assert.match(source, /local: '本地', codex: 'Codex'/)
+  assert.match(source, /const showingCodex = filters\.source === 'codex'/)
+  assert.match(source, /showingCodex\s*\? jsx\(CodexTable/)
+  assert.doesNotMatch(source, /jsx\(CodexSkills/)
 })
 
 test('desktop plugin avoids hard-coded color literals', () => {
