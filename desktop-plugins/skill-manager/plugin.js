@@ -586,14 +586,14 @@ function CodexTable({ busy, onAction, path, rows, t }) {
         className: 'overflow-x-auto border border-(--ui-stroke-secondary)',
         children: jsxs('table', {
           'aria-label': t('codexList.title'),
-          className: 'w-full min-w-[46rem] border-collapse text-sm',
+          className: 'w-full min-w-[46rem] table-fixed border-collapse text-sm',
           children: [
             jsx('thead', {
               className: 'bg-(--ui-bg-secondary) text-left text-xs text-(--ui-text-tertiary)',
               children: jsx('tr', { children: [
-                jsx('th', { className: 'px-3 py-2 font-medium', children: t('table.skill') }),
-                jsx('th', { className: 'px-3 py-2 font-medium', children: t('table.path') }),
-                jsx('th', { className: 'px-3 py-2 text-right font-medium', children: t('table.actions') })
+                jsx('th', { className: 'w-[23rem] px-3 py-2 font-medium', children: t('table.skill') }),
+                jsx('th', { className: 'w-[16rem] px-3 py-2 font-medium', children: t('table.path') }),
+                jsx('th', { className: 'w-[7rem] px-3 py-2 text-right font-medium', children: t('table.actions') })
               ] })
             }),
             jsx('tbody', {
@@ -603,7 +603,7 @@ function CodexTable({ busy, onAction, path, rows, t }) {
                 children: [
                   jsx('td', {
                     className: 'px-3 py-2',
-                    children: jsxs('div', { className: 'max-w-[32rem] min-w-0', children: [
+                    children: jsxs('div', { className: 'min-w-0', children: [
                       jsx('div', { className: 'break-all font-medium', children: row.name }),
                       jsx('div', {
                         className: 'mt-0.5 truncate text-xs text-(--ui-text-secondary)',
@@ -744,16 +744,18 @@ function SkillTable({ busy, language, onAction, onSelect, rows, t }) {
   if (!rows.length) return jsx(EmptyState, { title: t('emptyTitle'), description: t('emptyBody') })
   return jsx('div', {
     className: 'overflow-x-auto border border-(--ui-stroke-secondary)',
-    children: jsxs('table', { className: 'w-full min-w-[64rem] border-collapse text-sm', children: [
+    children: jsxs('table', {
+      className: 'w-full min-w-[68rem] table-fixed border-collapse text-sm',
+      children: [
       jsx('thead', {
         className: 'bg-(--ui-bg-secondary) text-left text-xs text-(--ui-text-tertiary)',
         children: jsx('tr', { children: [
-          jsx('th', { className: 'px-3 py-2 font-medium', children: t('table.skill') }),
-          jsx('th', { className: 'px-3 py-2 font-medium', children: t('table.source') }),
-          jsx('th', { className: 'px-3 py-2 font-medium', children: t('table.category') }),
-          jsx('th', { className: 'px-3 py-2 font-medium', children: t('table.status') }),
-          jsx('th', { className: 'px-3 py-2 font-medium', children: t('table.codex') }),
-          jsx('th', { className: 'px-3 py-2 text-right font-medium', children: t('table.actions') })
+          jsx('th', { className: 'w-[22rem] px-3 py-2 font-medium', children: t('table.skill') }),
+          jsx('th', { className: 'w-[7rem] px-3 py-2 font-medium', children: t('table.source') }),
+          jsx('th', { className: 'w-[9rem] px-3 py-2 font-medium', children: t('table.category') }),
+          jsx('th', { className: 'w-[7rem] px-3 py-2 font-medium', children: t('table.status') }),
+          jsx('th', { className: 'w-[8rem] px-3 py-2 font-medium', children: t('table.codex') }),
+          jsx('th', { className: 'w-[15rem] px-3 py-2 text-right font-medium', children: t('table.actions') })
         ] })
       }),
       jsx('tbody', {
@@ -763,7 +765,7 @@ function SkillTable({ busy, language, onAction, onSelect, rows, t }) {
           children: [
             jsx('td', {
               className: 'px-3 py-2',
-              children: jsxs('div', { className: 'max-w-[32rem] min-w-0', children: [
+              children: jsxs('div', { className: 'min-w-0', children: [
                 jsx('button', {
                   className: 'block max-w-full break-all text-left font-medium hover:underline',
                   type: 'button',

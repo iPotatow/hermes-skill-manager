@@ -59,6 +59,11 @@ test('desktop renders Hermes and Codex user skills as tables without skill cards
 
 test('descriptions sit below skill names and stay on one line', () => {
   assert.doesNotMatch(source, /children:\s*t\('table\.description'\)/)
+  assert.match(source, /min-w-\[68rem\] table-fixed/)
+  assert.match(source, /min-w-\[46rem\] table-fixed/)
+  for (const column of ['source', 'category', 'status', 'codex', 'actions']) {
+    assert.match(source, new RegExp(`children: t\\('table\\.${column}'\\)`))
+  }
   assert.match(source, /className: 'mt-0\.5 truncate text-xs text-\(--ui-text-secondary\)'/)
   assert.match(source, /title: descriptionOf\(row, language\) \|\| t\('noDescription'\)/)
   assert.match(source, /title: row\.description \|\| t\('noDescription'\)/)

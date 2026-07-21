@@ -89,4 +89,4 @@ node --test tests/desktop_plugin_smoke.test.js
 python3 -m unittest discover -s tests -v
 ```
 
-插件 ID：`skill-manager` · Desktop 路径：`/skill-manager` · 版本：`1.5.3`
+插件 ID：`skill-manager` · Desktop 路径：`/skill-manager` · 版本：`1.5.4`
