@@ -24,6 +24,7 @@ const TONE_CLASSES = {
 
 const MESSAGES = {
   en: {
+    language: 'en',
     title: 'Skill Manager',
     subtitle: 'Manage Hermes skills and sync them into Codex.',
     search: 'Search',
@@ -97,6 +98,7 @@ const MESSAGES = {
     }
   },
   zh: {
+    language: 'zh',
     title: '技能管理',
     subtitle: '管理 Hermes 技能，并将它们同步到 Codex。',
     search: '搜索',
@@ -185,12 +187,6 @@ const actionsOf = row => Array.from(new Set([
 const descriptionOf = (row, language) => language === 'zh'
   ? row.descriptionZh || row.description || row.descriptionEn || ''
   : row.descriptionEn || row.description || row.descriptionZh || ''
-const currentLanguage = () => {
-  const locale = typeof document !== 'undefined'
-    ? document.documentElement.lang
-    : typeof navigator !== 'undefined' ? navigator.language : ''
-  return String(locale || '').toLowerCase().startsWith('zh') ? 'zh' : 'en'
-}
 const actionVariant = action => ['delete', 'delete-codex'].includes(action)
   ? 'destructive'
   : action === 'sync-codex' ? 'default' : 'secondary'
@@ -821,7 +817,7 @@ function SkillManagePage() {
   )
   const pluginUpdate = usePluginUpdate(t, () => setPluginUpdateOpen(false))
   const data = inventory.data || {}
-  const language = currentLanguage()
+  const language = t('language') === 'zh' ? 'zh' : 'en'
   const view = useInventoryView(data, { ...filters, language }, filters.showDeleted, t)
   const showingCodex = filters.source === 'codex'
   const changeFilter = (key, value) => setFilters(current => ({ ...current, [key]: value }))

@@ -98,6 +98,10 @@ test('desktop copy is bilingual and includes backend-mount guidance', () => {
   assert.match(source, /'sync-codex': '同步'/)
   assert.match(source, /backendUnavailable:/)
   assert.match(source, /ctx\.i18n\.register\(MESSAGES\)/)
+  assert.match(source, /language: 'en'/)
+  assert.match(source, /language: 'zh'/)
+  assert.match(source, /const language = t\('language'\) === 'zh' \? 'zh' : 'en'/)
+  assert.doesNotMatch(source, /document\.documentElement\.lang|navigator\.language/)
 })
 
 test('Codex appears directly after Local as a source tab and swaps the main table', () => {

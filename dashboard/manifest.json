@@ -2,7 +2,7 @@
   "name": "skill-manager",
   "label": "Skill Manager Backend",
   "description": "Backend API for managing Hermes skills and Codex user skills.",
-  "version": "1.5.8",
+  "version": "1.5.9",
   "tab": {
     "hidden": true
   },
