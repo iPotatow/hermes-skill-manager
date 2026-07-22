@@ -9,15 +9,19 @@
 - Desktop 侧边栏页面与 `⌘K` 命令入口
 - Dashboard 清单仅挂载后端 API，不注册 Dashboard 侧边栏
 - Hermes 与 Codex 技能均使用紧凑表格展示，不使用技能卡片
-- 搜索、来源和分类筛选集中在一行，支持全文搜索
+- Hermes 与 Codex 使用一级分段视图，来源筛选只作用于 Hermes 清单
+- 搜索、来源和分类筛选支持响应式换行、全文搜索和一键清除
 - 内建技能中文简介取自 [Hermes 官方中文技能目录](https://hermes-agent.nousresearch.com/docs/zh-Hans/reference/skills-catalog)，跟随 Desktop 界面语言显示，后台定时刷新并保留离线快照
 - 技能详情、最近操作、诊断与自动刷新
 - 页面顶部提供插件更新按钮，点击后需再次确认；更新成功会自动热加载 Desktop 入口
 - 内建技能重置、删除、恢复；Hub 技能重置、更新、删除；本地技能删除
 - 删除和重置要求输入完整技能名确认，确认框可一键填入名称
 - 内建、社区和本地技能均显示“同步”按钮，可一键同步到 `$CODEX_HOME/skills/<技能名>`；覆盖已有 Codex 技能时要求输入完整技能名确认
-- 主表按“技能、分类、来源、类型、操作”展示；简介位于技能名称下方并限制为一行，完整内容仍可悬停查看或在详情中阅读
-- 顶部来源筛选在“本地”后提供“Codex”入口；点击后在主表格中显示 Codex 用户技能，不显示 `.system` 系统技能，并支持安全删除
+- 主表按“技能、分类、来源、Codex 状态、操作”展示；来源类型与具体仓库合并显示，简介位于技能名下方并限制为一行
+- 行内保留同步或恢复主操作，更新、重置和删除收纳到原生操作菜单；首尾列与表头支持粘滞定位
+- 顶部汇总未同步、已停用、可恢复和诊断数量；“可恢复的内建技能”可按需加入清单
+- Codex 视图不显示 `.system` 系统技能，并通过低干扰操作菜单安全删除用户技能
+- 详情按基本信息、来源与路径、Codex 同步分组，支持复制路径、`Esc` 关闭、焦点锁定与返回
 - 中英文界面、响应式布局及 Hermes Desktop 主题适配
 - 后端未挂载时提供明确的安装、启用和重启提示
 
@@ -89,4 +93,4 @@ node --test tests/desktop_plugin_smoke.test.js
 python3 -m unittest discover -s tests -v
 ```
 
-插件 ID：`skill-manager` · Desktop 路径：`/skill-manager` · 版本：`1.5.9`
+插件 ID：`skill-manager` · Desktop 路径：`/skill-manager` · 版本：`1.6.0`

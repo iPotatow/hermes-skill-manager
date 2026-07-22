@@ -9,15 +9,19 @@ English | [简体中文](README.md)
 - Native Desktop sidebar page and `⌘K` command
 - The Dashboard manifest mounts backend APIs without adding a Dashboard sidebar item
 - Compact tables for Hermes and Codex skills, with no skill-card layout
-- Full-text search with source and category filters in one toolbar row
+- Top-level Hermes/Codex segmented views, with source filters scoped to the Hermes inventory
+- Responsive, wrapping search and filters with full-text search and one-click reset
 - Built-in Chinese descriptions come from the [official Hermes Chinese skills catalog](https://hermes-agent.nousresearch.com/docs/zh-Hans/reference/skills-catalog), follow the Desktop UI language, and use background refresh with an offline snapshot
 - Skill details, recent actions, diagnostics, and automatic refresh
 - A page-level plugin update button with an explicit second confirmation and automatic Desktop entry hot reload
 - Built-in reset/delete/restore; Hub reset/update/delete; local delete
 - Exact-name confirmation for delete and reset, with a one-click name-fill button
 - Built-in, community, and local skills all show the “Sync” action and can be copied to `$CODEX_HOME/skills/<skill-name>`; replacement requires exact-name confirmation
-- The main table shows Skill, Category, Source, Type, and Actions; descriptions sit below skill names and stay on one line, with full text on hover and in details
-- A **Codex** source tab appears immediately after **Local** and swaps the main table to Codex user skills; it hides `.system` and safely deletes user skills
+- The main table shows Skill, Category, Source, Codex status, and Actions; source kind and repository share one cell, while descriptions stay on one line below skill names
+- Each row keeps Sync or Restore visible and moves update, reset, and delete into a native overflow menu; table headers and edge columns remain sticky
+- The header summarizes unsynced, disabled, restorable, and diagnostic counts; restorable built-ins can be added to the inventory on demand
+- The Codex view hides `.system` skills and safely deletes user skills through a low-noise action menu
+- Details are grouped into overview, location, and Codex sync sections, with copyable paths, Escape-to-close, focus trapping, and focus restoration
 - English/Chinese UI, responsive layout, and Hermes Desktop theme support
 - Actionable install, enable, and restart guidance when the backend is not mounted
 
@@ -89,4 +93,4 @@ node --test tests/desktop_plugin_smoke.test.js
 python3 -m unittest discover -s tests -v
 ```
 
-Plugin ID: `skill-manager` · Desktop route: `/skill-manager` · Version: `1.5.9`
+Plugin ID: `skill-manager` · Desktop route: `/skill-manager` · Version: `1.6.0`

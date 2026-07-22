@@ -51,39 +51,47 @@ test('desktop renders Hermes and Codex user skills as tables without skill cards
   assert.match(source, /function SkillTable/)
   assert.match(source, /function CodexTable/)
   assert.match(source, /jsxs\('table'/)
-  assert.match(source, /onAction\(row, 'delete-codex'\)/)
+  assert.match(source, /actions: \['delete-codex'\]/)
   assert.doesNotMatch(source, /function SkillCard/)
   assert.doesNotMatch(source, /function SkillList/)
   assert.doesNotMatch(source, /codexList\.(?:system|user)/)
 })
 
 test('descriptions sit below skill names and stay on one line', () => {
-  assert.match(source, /min-w-\[64rem\] table-fixed/)
-  assert.match(source, /min-w-\[46rem\] table-fixed/)
+  assert.match(source, /min-w-\[58rem\] table-fixed/)
+  assert.match(source, /min-w-\[42rem\] table-fixed/)
   assert.match(source, /className: 'mt-0\.5 truncate text-xs text-\(--ui-text-secondary\)'/)
   assert.match(source, /title: descriptionOf\(row, language\) \|\| t\('noDescription'\)/)
   assert.match(source, /title: row\.description \|\| t\('noDescription'\)/)
 })
 
-test('main table columns are skill category source type and actions', () => {
+test('main table merges source and type and surfaces Codex status', () => {
   assert.match(source, /skill: '技能', category: '分类', source: '来源', type: '类型'/)
-  assert.match(source, /table\.skill[\s\S]*table\.category[\s\S]*table\.source[\s\S]*table\.type[\s\S]*table\.actions/)
-  assert.match(source, /w-\[29rem\][^\n]*table\.skill/)
-  assert.match(source, /w-\[6rem\][^\n]*table\.source/)
-  assert.match(source, /w-\[5rem\][^\n]*table\.type/)
-  assert.doesNotMatch(source, /children:\s*t\('table\.(?:description|status|codex)'\)/)
+  assert.match(source, /function SourceCell/)
+  assert.match(source, /function CodexStatus/)
+  assert.match(source, /table\.skill[\s\S]*table\.category[\s\S]*table\.source[\s\S]*fields\.codexStatus[\s\S]*table\.actions/)
+  assert.doesNotMatch(source, /children:\s*t\('table\.type'\)/)
   assert.match(source, /const rawSourceOf = row => row\.rawSource \|\| row\.source \|\| sourceOf\(row\)/)
 })
 
-test('search and filters stay on one horizontally scrollable row', () => {
-  assert.match(source, /overflow-x-auto rounded-md border[^\n]*p-3/)
-  assert.match(source, /className: 'flex min-w-max items-center gap-2'/)
-  assert.match(source, /className: 'flex shrink-0 gap-2'/)
-  assert.match(source, /className: 'w-\[22rem\] shrink-0'/)
-  assert.doesNotMatch(source, /lg:grid-cols-\[minmax\(16rem,1fr\)_12rem_12rem_auto\]/)
+test('search and filters wrap responsively and can be cleared', () => {
+  assert.match(source, /className: 'space-y-3 rounded-md border[^\n]*p-3'/)
+  assert.match(source, /className: 'flex flex-wrap items-center gap-2'/)
+  assert.match(source, /className: 'min-w-\[16rem\] flex-1'/)
+  assert.match(source, /clearFilters: '清除筛选'/)
+  assert.match(source, /onClick: onClear/)
   assert.doesNotMatch(source, /const STATUSES/)
   assert.doesNotMatch(source, /filters\.status/)
   assert.doesNotMatch(source, /onChange\('status'/)
+})
+
+test('row actions keep sync visible and move secondary actions into a native menu', () => {
+  assert.match(source, /function ActionMenu/)
+  assert.match(source, /jsx\(DropdownMenuTrigger/)
+  assert.match(source, /variant: 'destructive'/)
+  assert.match(source, /const primary = actions\.includes\('sync-codex'\)/)
+  assert.match(source, /compact: true/)
+  assert.match(source, /resync: '重新同步'/)
 })
 
 test('confirmation dialog can fill the exact skill name with one click', () => {
@@ -104,12 +112,25 @@ test('desktop copy is bilingual and includes backend-mount guidance', () => {
   assert.doesNotMatch(source, /document\.documentElement\.lang|navigator\.language/)
 })
 
-test('Codex appears directly after Local as a source tab and swaps the main table', () => {
-  assert.match(source, /const SOURCES = \['all', 'builtin', 'hub-installed', 'local', 'codex'\]/)
-  assert.match(source, /local: '本地', codex: 'Codex'/)
-  assert.match(source, /const showingCodex = filters\.source === 'codex'/)
+test('Hermes and Codex are separate inventory views with correct result totals', () => {
+  assert.match(source, /const VIEWS = \['hermes', 'codex'\]/)
+  assert.match(source, /const SOURCES = \['all', 'builtin', 'hub-installed', 'local'\]/)
+  assert.match(source, /jsx\(SegmentedControl/)
+  assert.match(source, /const showingCodex = filters\.view === 'codex'/)
+  assert.match(source, /const totalCount = showingCodex \? view\.codex\.length : view\.rows\.length/)
   assert.match(source, /showingCodex\s*\? jsx\(CodexTable/)
-  assert.doesNotMatch(source, /jsx\(CodexSkills/)
+  assert.match(source, /showMissingBuiltin: '显示可恢复的内建技能'/)
+  assert.doesNotMatch(source, /showDeleted/)
+})
+
+test('drawers and confirmation overlays support keyboard focus and copyable paths', () => {
+  assert.match(source, /function useDialogA11y/)
+  assert.match(source, /event\.key === 'Escape'/)
+  assert.match(source, /event\.key !== 'Tab'/)
+  assert.match(source, /previous\?\.focus\?\.\(\)/)
+  assert.match(source, /'aria-labelledby': 'skill-detail-title'/)
+  assert.match(source, /'aria-labelledby': 'skill-confirm-title'/)
+  assert.match(source, /jsx\(CopyButton/)
 })
 
 test('desktop plugin avoids hard-coded color literals', () => {

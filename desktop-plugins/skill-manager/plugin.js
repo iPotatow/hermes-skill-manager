@@ -1,17 +1,20 @@
 /** Native Hermes Desktop skill manager. Plain ESM; no build step. */
 import {
-  Badge, Button, Codicon, EmptyState, ErrorState, GlyphSpinner, Input,
+  Badge, Button, Codicon, CopyButton, DropdownMenu, DropdownMenuContent,
+  DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger, EmptyState,
+  ErrorState, GlyphSpinner, Input, SegmentedControl,
   PALETTE_AREA, ROUTES_AREA, SIDEBAR_NAV_AREA, ScrollArea, cn, host,
   useMutation, usePluginI18n, useQuery, useQueryClient
 } from '@hermes/plugin-sdk'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Fragment, jsx, jsxs } from 'react/jsx-runtime'
 
 const ID = 'skill-manager'
 const ROUTE = '/skill-manager'
 const QUERY_KEY = [ID, 'inventory']
 const REFRESH_INTERVAL_MS = 15000
-const SOURCES = ['all', 'builtin', 'hub-installed', 'local', 'codex']
+const VIEWS = ['hermes', 'codex']
+const SOURCES = ['all', 'builtin', 'hub-installed', 'local']
 const CONFIRMED_ACTIONS = new Set(['delete', 'delete-codex', 'reset'])
 const TONE_CLASSES = {
   enabled: 'text-foreground border-(--ui-stroke-primary)',
@@ -19,7 +22,9 @@ const TONE_CLASSES = {
   deleted: 'text-foreground border-(--ui-stroke-primary)',
   builtin: 'text-(--ui-accent) border-(--ui-accent)',
   'hub-installed': 'text-(--ui-text-secondary) border-(--ui-stroke-primary)',
-  local: 'text-(--ui-text-secondary) border-(--ui-stroke-secondary)'
+  local: 'text-(--ui-text-secondary) border-(--ui-stroke-secondary)',
+  installed: 'text-(--ui-accent) border-(--ui-accent)',
+  missing: 'text-(--ui-text-tertiary) border-(--ui-stroke-secondary)'
 }
 
 const MESSAGES = {
@@ -38,8 +43,11 @@ const MESSAGES = {
     pluginUpdateSuccess: 'Plugin updated. Restart the Hermes gateway to apply backend changes.',
     pluginUpToDate: 'The plugin is already up to date.',
     retry: 'Retry',
-    showDeleted: 'Show deleted built-ins',
+    showMissingBuiltin: 'Show restorable built-ins',
     results: (shown, total) => `${shown} of ${total}`,
+    clearFilters: 'Clear filters',
+    moreActions: 'More actions',
+    copy: 'Copy',
     allCategories: 'All categories',
     root: '(root)',
     details: 'Skill details',
@@ -60,7 +68,8 @@ const MESSAGES = {
     success: (action, name) => `${action}: ${name}`,
     nav: 'Skill Manager',
     open: 'Open Skill Manager',
-    stats: { total: 'Total', builtin: 'Built-in', community: 'Community', local: 'Local' },
+    views: { hermes: 'Hermes skills', codex: 'Codex skills' },
+    stats: { unsynced: 'Not in Codex', disabled: 'Disabled', restorable: 'Restorable', diagnostics: 'Diagnostics' },
     sources: {
       all: 'All', builtin: 'Built-in', 'hub-installed': 'Community',
       local: 'Local', codex: 'Codex'
@@ -84,8 +93,9 @@ const MESSAGES = {
     },
     actions: {
       delete: 'Delete', reset: 'Reset', update: 'Update', restore: 'Restore',
-      'sync-codex': 'Sync', 'delete-codex': 'Delete', 'plugin-update': 'Plugin update'
+      'sync-codex': 'Sync', resync: 'Sync again', 'delete-codex': 'Delete', 'plugin-update': 'Plugin update'
     },
+    detailGroups: { overview: 'Overview', location: 'Location', codex: 'Codex sync' },
     confirmTitle: {
       delete: 'Delete skill', 'delete-codex': 'Delete Codex skill',
       reset: 'Reset skill', 'sync-codex': 'Replace Codex skill'
@@ -112,8 +122,11 @@ const MESSAGES = {
     pluginUpdateSuccess: '插件已更新。请重启 Hermes 网关以应用后端变更。',
     pluginUpToDate: '插件已是最新版本。',
     retry: '重试',
-    showDeleted: '显示已删除内建',
+    showMissingBuiltin: '显示可恢复的内建技能',
     results: (shown, total) => `显示 ${shown} / ${total}`,
+    clearFilters: '清除筛选',
+    moreActions: '更多操作',
+    copy: '复制',
     allCategories: '全部分类',
     root: '（根目录）',
     details: '技能详情',
@@ -134,7 +147,8 @@ const MESSAGES = {
     success: (action, name) => `${action}：${name}`,
     nav: '技能管理',
     open: '打开技能管理',
-    stats: { total: '总数', builtin: '内建', community: '社区', local: '本地' },
+    views: { hermes: 'Hermes 技能', codex: 'Codex 技能' },
+    stats: { unsynced: '未同步', disabled: '已停用', restorable: '可恢复', diagnostics: '诊断' },
     sources: {
       all: '全部', builtin: '内建', 'hub-installed': '社区',
       local: '本地', codex: 'Codex'
@@ -158,8 +172,9 @@ const MESSAGES = {
     },
     actions: {
       delete: '删除', reset: '重置', update: '更新', restore: '恢复',
-      'sync-codex': '同步', 'delete-codex': '删除', 'plugin-update': '插件更新'
+      'sync-codex': '同步', resync: '重新同步', 'delete-codex': '删除', 'plugin-update': '插件更新'
     },
+    detailGroups: { overview: '基本信息', location: '来源与路径', codex: 'Codex 同步' },
     confirmTitle: {
       delete: '删除技能', 'delete-codex': '删除 Codex 技能',
       reset: '重置技能', 'sync-codex': '覆盖 Codex 技能'
@@ -192,6 +207,55 @@ const actionVariant = action => ['delete', 'delete-codex'].includes(action)
   : action === 'sync-codex' ? 'default' : 'secondary'
 const requiresConfirmation = (row, action) => CONFIRMED_ACTIONS.has(action)
   || (action === 'sync-codex' && row.codexInstalled)
+const actionLabel = (row, action, t) => action === 'sync-codex' && row.codexInstalled
+  ? t('actions.resync')
+  : t(`actions.${action}`)
+const hasValue = value => value !== undefined && value !== null && value !== '' && value !== '-'
+
+function useDialogA11y(open, onClose, closable = true) {
+  const ref = useRef(null)
+  const onCloseRef = useRef(onClose)
+  onCloseRef.current = onClose
+  useEffect(() => {
+    if (!open || !ref.current) return undefined
+    const node = ref.current
+    const previous = document.activeElement
+    const focusableSelector = [
+      'button:not([disabled])', '[href]', 'input:not([disabled])',
+      'select:not([disabled])', 'textarea:not([disabled])', '[tabindex]:not([tabindex="-1"])'
+    ].join(',')
+    const focusables = () => Array.from(node.querySelectorAll(focusableSelector))
+    focusables()[0]?.focus()
+    const onKeyDown = event => {
+      if (event.key === 'Escape' && closable) {
+        event.preventDefault()
+        onCloseRef.current()
+        return
+      }
+      if (event.key !== 'Tab') return
+      const items = focusables()
+      if (!items.length) {
+        event.preventDefault()
+        return
+      }
+      const first = items[0]
+      const last = items[items.length - 1]
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault()
+        last.focus()
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault()
+        first.focus()
+      }
+    }
+    document.addEventListener('keydown', onKeyDown)
+    return () => {
+      document.removeEventListener('keydown', onKeyDown)
+      previous?.focus?.()
+    }
+  }, [closable, open])
+  return ref
+}
 
 function errorPayload(error) {
   const raw = error && error.message ? String(error.message) : String(error || '')
@@ -258,16 +322,15 @@ function filterCodexRows(rows, query) {
   ].join('\n').toLowerCase().includes(needle))
 }
 
-function useInventoryView(data, filters, showDeleted, t) {
+function useInventoryView(data, filters, showMissingBuiltin, t) {
   const installed = asArray(data.skills)
   const missing = asArray(data.missingBuiltinSkills)
   const codex = asArray(data.codexSkills)
-  const rows = showDeleted ? installed.concat(missing) : installed
+  const rows = showMissingBuiltin ? installed.concat(missing) : installed
   const categories = useMemo(
     () => Array.from(new Set(rows.map(row => row.category || t('root')))).sort(),
     [rows, t]
   )
-  const installedCounts = useMemo(() => countSources(installed), [installed])
   const rowCounts = useMemo(() => countSources(rows), [rows])
   const visible = useMemo(
     () => filterRows(rows, { ...filters, t }),
@@ -278,8 +341,7 @@ function useInventoryView(data, filters, showDeleted, t) {
     [codex, filters.query]
   )
   return {
-    categories, codex, codexVisible, installed, installedCounts,
-    missing, rowCounts, rows, visible
+    categories, codex, codexVisible, installed, missing, rowCounts, rows, visible
   }
 }
 
@@ -348,46 +410,162 @@ function Stat({ label, value }) {
   })
 }
 
-function ActionButtons({ busy, onAction, row, t }) {
+function ActionMenu({ actions, busy, onAction, row, t }) {
+  if (!actions.length) return null
+  const regular = actions.filter(action => !['delete', 'delete-codex'].includes(action))
+  const destructive = actions.filter(action => ['delete', 'delete-codex'].includes(action))
+  return jsxs(DropdownMenu, { children: [
+    jsx(DropdownMenuTrigger, {
+      asChild: true,
+      children: jsx(Button, {
+        'aria-label': t('moreActions'),
+        disabled: busy,
+        size: 'icon',
+        title: t('moreActions'),
+        variant: 'ghost',
+        children: jsx(Codicon, { name: 'kebab-vertical' })
+      })
+    }),
+    jsxs(DropdownMenuContent, {
+      align: 'end',
+      className: 'w-40',
+      sideOffset: 6,
+      children: [
+        ...regular.map(action => jsx(DropdownMenuItem, {
+          disabled: busy,
+          onSelect: () => onAction(row, action),
+          children: actionLabel(row, action, t)
+        }, action)),
+        destructive.length && regular.length ? jsx(DropdownMenuSeparator, {}) : null,
+        ...destructive.map(action => jsx(DropdownMenuItem, {
+          disabled: busy,
+          onSelect: () => onAction(row, action),
+          variant: 'destructive',
+          children: actionLabel(row, action, t)
+        }, action))
+      ]
+    })
+  ] })
+}
+
+function ActionButtons({ busy, compact = false, onAction, row, t }) {
   const actions = actionsOf(row)
   if (!actions.length) return null
+  if (compact) {
+    const primary = actions.includes('sync-codex')
+      ? 'sync-codex'
+      : actions.includes('restore') ? 'restore' : actions[0]
+    const remaining = actions.filter(action => action !== primary)
+    return jsxs('div', {
+      className: 'flex items-center justify-end gap-1.5',
+      children: [
+        jsx(Button, {
+          disabled: busy,
+          size: 'sm',
+          variant: primary === 'sync-codex' && row.codexInstalled ? 'secondary' : actionVariant(primary),
+          onClick: () => onAction(row, primary),
+          children: actionLabel(row, primary, t)
+        }),
+        jsx(ActionMenu, { actions: remaining, busy, onAction, row, t })
+      ]
+    })
+  }
   return jsx('div', {
     className: 'flex flex-wrap items-center gap-2 md:justify-end',
     children: actions.map(action => jsx(Button, {
       disabled: busy,
       size: 'sm',
-      variant: actionVariant(action),
+      variant: action === 'sync-codex' && row.codexInstalled ? 'secondary' : actionVariant(action),
       onClick: () => onAction(row, action),
-      children: t(`actions.${action}`)
+      children: actionLabel(row, action, t)
     }, action))
   })
 }
 
+function SourceCell({ row, t }) {
+  const kind = sourceOf(row)
+  const raw = rawSourceOf(row)
+  const showRaw = !['builtin', 'local'].includes(kind) && raw !== kind
+  return jsxs('div', { className: 'min-w-0 space-y-1', children: [
+    jsx(ToneBadge, { tone: kind, children: t(`sources.${kind}`) }),
+    showRaw ? jsx('div', {
+      className: 'truncate text-xs text-(--ui-text-tertiary)',
+      title: raw,
+      children: raw
+    }) : null
+  ] })
+}
+
+function CodexStatus({ row, t }) {
+  if (!canSync(row)) return jsx('span', { className: 'text-(--ui-text-tertiary)', children: '—' })
+  return jsx(ToneBadge, {
+    tone: row.codexInstalled ? 'installed' : 'missing',
+    children: row.codexInstalled ? t('codex.installed') : t('codex.notInstalled')
+  })
+}
+
+function DetailField({ copyable = false, label, t, value }) {
+  if (!hasValue(value)) return null
+  return jsxs('div', {
+    className: 'grid gap-1 sm:grid-cols-[8rem_minmax(0,1fr)]',
+    children: [
+      jsx('dt', { className: 'text-xs text-(--ui-text-tertiary)', children: label }),
+      jsxs('dd', { className: 'flex min-w-0 items-start gap-1 text-sm', children: [
+        jsx('span', { className: 'min-w-0 flex-1 break-all', children: value }),
+        copyable ? jsx(CopyButton, {
+          appearance: 'inline', label: t('copy'), showLabel: false, text: String(value)
+        }) : null
+      ] })
+    ]
+  })
+}
+
+function DetailGroup({ fields, label, t }) {
+  const visible = fields.filter(([, value]) => hasValue(value))
+  if (!visible.length) return null
+  return jsxs('section', { className: 'space-y-3', children: [
+    jsx('h3', {
+      className: 'border-b border-(--ui-stroke-secondary) pb-2 text-xs font-semibold uppercase tracking-wide text-(--ui-text-tertiary)',
+      children: label
+    }),
+    jsx('dl', {
+      className: 'space-y-3',
+      children: visible.map(([fieldLabel, value, copyable]) => jsx(DetailField, {
+        copyable, label: fieldLabel, t, value
+      }, fieldLabel))
+    })
+  ] })
+}
+
 function DetailDrawer({ busy, language, onAction, onClose, row, t }) {
+  const dialogRef = useDialogA11y(Boolean(row), onClose)
   if (!row) return null
-  const fields = [
+  const overviewFields = [
     [t('fields.category'), row.category || t('root')],
-    [t('fields.source'), rawSourceOf(row)],
     [t('fields.type'), t(`sources.${sourceOf(row)}`)],
     [t('fields.trust'), t(`trust.${row.trustLevel || sourceOf(row)}`)],
-    [t('fields.status'), t(`statuses.${row.status}`)],
-    [t('fields.path'), row.installPath || '-'],
-    [t('fields.identifier'), row.identifier || '-'],
-    [t('fields.installed'), row.installedAt || '-'],
-    [t('fields.updated'), row.updatedAt || '-']
+    [t('fields.status'), t(`statuses.${row.status}`)]
   ]
-  if (canSync(row)) fields.push(
+  const locationFields = [
+    [t('fields.source'), rawSourceOf(row)],
+    [t('fields.path'), row.installPath, true],
+    [t('fields.identifier'), row.identifier, true],
+    [t('fields.installed'), row.installedAt],
+    [t('fields.updated'), row.updatedAt]
+  ]
+  const codexFields = canSync(row) ? [
     [t('fields.codexStatus'), row.codexInstalled ? t('codex.installed') : t('codex.notInstalled')],
-    [t('fields.codexPath'), row.codexPath || '-']
-  )
+    [t('fields.codexPath'), row.codexPath, true]
+  ] : []
   return jsx('div', {
-    className: 'fixed inset-0 z-40 flex justify-end bg-background/90 backdrop-blur-sm',
+    className: 'fixed inset-0 z-40 flex justify-end bg-background/60 backdrop-blur-[1px]',
     role: 'presentation',
     onMouseDown: event => event.target === event.currentTarget && onClose(),
     children: jsxs('section', {
-      'aria-label': t('details'),
+      'aria-labelledby': 'skill-detail-title',
       'aria-modal': true,
       className: 'flex h-full w-full max-w-lg flex-col border-l border-(--ui-stroke-secondary) bg-background shadow-xl',
+      ref: dialogRef,
       role: 'dialog',
       children: [
         jsxs('header', {
@@ -395,7 +573,11 @@ function DetailDrawer({ busy, language, onAction, onClose, row, t }) {
           children: [
             jsxs('div', { children: [
               jsx('div', { className: 'text-xs text-(--ui-text-tertiary)', children: t('details') }),
-              jsx('h2', { className: 'mt-1 break-all text-lg font-semibold', children: row.name })
+              jsx('h2', {
+                className: 'mt-1 break-all text-lg font-semibold',
+                id: 'skill-detail-title',
+                children: row.name
+              })
             ] }),
             jsx(Button, {
               'aria-label': t('close'), size: 'icon', variant: 'ghost', onClick: onClose,
@@ -410,16 +592,9 @@ function DetailDrawer({ busy, language, onAction, onClose, row, t }) {
               className: 'whitespace-pre-wrap break-words text-sm leading-6 text-(--ui-text-secondary)',
               children: descriptionOf(row, language) || t('noDescription')
             }),
-            jsx('dl', {
-              className: 'space-y-3',
-              children: fields.map(([label, value]) => jsxs('div', {
-                className: 'grid gap-1 sm:grid-cols-[8rem_minmax(0,1fr)]',
-                children: [
-                  jsx('dt', { className: 'text-xs text-(--ui-text-tertiary)', children: label }),
-                  jsx('dd', { className: 'break-all text-sm', children: value })
-                ]
-              }, label))
-            })
+            jsx(DetailGroup, { fields: overviewFields, label: t('detailGroups.overview'), t }),
+            jsx(DetailGroup, { fields: locationFields, label: t('detailGroups.location'), t }),
+            jsx(DetailGroup, { fields: codexFields, label: t('detailGroups.codex'), t })
           ] })
         }),
         actionsOf(row).length ? jsx('footer', {
@@ -433,6 +608,7 @@ function DetailDrawer({ busy, language, onAction, onClose, row, t }) {
 
 function ConfirmOverlay({ busy, onCancel, onConfirm, pending, t }) {
   const [value, setValue] = useState('')
+  const dialogRef = useDialogA11y(Boolean(pending), onCancel, !busy)
   if (!pending) return null
   const valid = value === pending.row.name && !busy
   return jsx('div', {
@@ -440,11 +616,17 @@ function ConfirmOverlay({ busy, onCancel, onConfirm, pending, t }) {
     role: 'presentation',
     onMouseDown: event => !busy && event.target === event.currentTarget && onCancel(),
     children: jsxs('section', {
+      'aria-labelledby': 'skill-confirm-title',
       'aria-modal': true,
       className: 'w-full max-w-md rounded-lg border border-(--ui-stroke-secondary) bg-background p-4 shadow-xl',
+      ref: dialogRef,
       role: 'dialog',
       children: [
-        jsx('h2', { className: 'text-base font-semibold', children: t(`confirmTitle.${pending.action}`) }),
+        jsx('h2', {
+          className: 'text-base font-semibold',
+          id: 'skill-confirm-title',
+          children: t(`confirmTitle.${pending.action}`)
+        }),
         jsx('p', {
           className: 'mt-2 text-sm leading-6 text-(--ui-text-secondary)',
           children: t(`confirmBody.${pending.action}`, pending.row.name)
@@ -491,6 +673,7 @@ function ConfirmOverlay({ busy, onCancel, onConfirm, pending, t }) {
 }
 
 function PluginUpdateOverlay({ busy, onCancel, onConfirm, open, t }) {
+  const dialogRef = useDialogA11y(open, onCancel, !busy)
   if (!open) return null
   return jsx('div', {
     className: 'fixed inset-0 z-50 grid place-items-center bg-background/90 p-4 backdrop-blur-sm',
@@ -500,6 +683,7 @@ function PluginUpdateOverlay({ busy, onCancel, onConfirm, open, t }) {
       'aria-labelledby': 'plugin-update-title',
       'aria-modal': true,
       className: 'w-full max-w-md rounded-lg border border-(--ui-stroke-secondary) bg-background p-4 shadow-xl',
+      ref: dialogRef,
       role: 'dialog',
       children: [
         jsx('h2', {
@@ -564,73 +748,66 @@ function History({ history, t }) {
   })
 }
 
-function CodexTable({ busy, onAction, path, rows, t }) {
+function CodexTable({ busy, onAction, rows, t }) {
   if (!rows.length) return jsx(EmptyState, {
     title: t('codexList.empty'),
-    description: path || '-'
+    description: t('emptyBody')
   })
-  return jsxs('section', {
-    className: 'space-y-2',
-    children: [
-      jsx('code', {
-        className: 'block break-all text-xs text-(--ui-text-tertiary)',
-        children: path || '-'
-      }),
-      jsx('div', {
-        className: 'overflow-x-auto border border-(--ui-stroke-secondary)',
-        children: jsxs('table', {
-          'aria-label': t('codexList.title'),
-          className: 'w-full min-w-[46rem] table-fixed border-collapse text-sm',
-          children: [
-            jsx('thead', {
-              className: 'bg-(--ui-bg-secondary) text-left text-xs text-(--ui-text-tertiary)',
-              children: jsx('tr', { children: [
-                jsx('th', { className: 'w-[23rem] px-3 py-2 font-medium', children: t('table.skill') }),
-                jsx('th', { className: 'w-[16rem] px-3 py-2 font-medium', children: t('table.path') }),
-                jsx('th', { className: 'w-[7rem] px-3 py-2 text-right font-medium', children: t('table.actions') })
-              ] })
+  return jsx('div', {
+    className: 'overflow-x-auto rounded-sm border border-(--ui-stroke-secondary)',
+    children: jsxs('table', {
+      'aria-label': t('codexList.title'),
+      className: 'w-full min-w-[42rem] table-fixed border-collapse text-sm',
+      children: [
+        jsx('thead', {
+          className: 'sticky top-0 z-10 bg-(--ui-bg-secondary) text-left text-xs text-(--ui-text-tertiary)',
+          children: jsx('tr', { children: [
+            jsx('th', {
+              className: 'sticky left-0 z-20 w-[23rem] bg-(--ui-bg-secondary) px-3 py-2 font-medium',
+              children: t('table.skill')
             }),
-            jsx('tbody', {
-              className: 'divide-y divide-(--ui-stroke-secondary)',
-              children: rows.map(row => jsx('tr', {
-                className: 'align-top hover:bg-(--ui-bg-secondary)',
-                children: [
-                  jsx('td', {
-                    className: 'px-3 py-2',
-                    children: jsxs('div', { className: 'min-w-0', children: [
-                      jsx('div', { className: 'break-all font-medium', children: row.name }),
-                      jsx('div', {
-                        className: 'mt-0.5 truncate text-xs text-(--ui-text-secondary)',
-                        title: row.description || t('noDescription'),
-                        children: row.description || t('noDescription')
-                      })
-                    ] })
-                  }),
-                  jsx('td', {
-                    className: 'px-3 py-2',
-                    children: jsx('code', { className: 'break-all text-xs', children: row.relativePath })
-                  }),
-                  jsx('td', {
-                    className: 'px-3 py-2 text-right',
-                    children: jsx(Button, {
-                      disabled: busy,
-                      size: 'sm',
-                      variant: 'destructive',
-                      onClick: () => onAction(row, 'delete-codex'),
-                      children: t('actions.delete-codex')
-                    })
-                  })
-                ]
-              }, row.relativePath))
+            jsx('th', { className: 'w-[16rem] px-3 py-2 font-medium', children: t('table.path') }),
+            jsx('th', {
+              className: 'sticky right-0 z-20 w-[3rem] bg-(--ui-bg-secondary) px-3 py-2 text-right font-medium',
+              children: t('table.actions')
             })
-          ]
+          ] })
+        }),
+        jsx('tbody', {
+          className: 'divide-y divide-(--ui-stroke-secondary)',
+          children: rows.map(row => jsx('tr', {
+            className: 'group align-top hover:bg-(--ui-bg-secondary)',
+            children: [
+              jsx('td', {
+                className: 'sticky left-0 z-[1] bg-background px-3 py-2 group-hover:bg-(--ui-bg-secondary)',
+                children: jsxs('div', { className: 'min-w-0', children: [
+                  jsx('div', { className: 'break-all font-medium', children: row.name }),
+                  jsx('div', {
+                    className: 'mt-0.5 truncate text-xs text-(--ui-text-secondary)',
+                    title: row.description || t('noDescription'),
+                    children: row.description || t('noDescription')
+                  })
+                ] })
+              }),
+              jsx('td', {
+                className: 'px-3 py-2',
+                children: jsx('code', { className: 'break-all text-xs', children: row.relativePath })
+              }),
+              jsx('td', {
+                className: 'sticky right-0 z-[1] bg-background px-2 py-1.5 text-right group-hover:bg-(--ui-bg-secondary)',
+                children: jsx(ActionMenu, {
+                  actions: ['delete-codex'], busy, onAction, row, t
+                })
+              })
+            ]
+          }, row.relativePath))
         })
-      })
-    ]
+      ]
+    })
   })
 }
 
-function PageHeader({ counts, fetching, onRefresh, onUpdate, total, t, updating }) {
+function PageHeader({ fetching, onRefresh, onUpdate, summary, t, updating }) {
   return jsxs('header', {
     className: 'border-b border-(--ui-stroke-secondary) px-4 py-4',
     children: [
@@ -642,6 +819,8 @@ function PageHeader({ counts, fetching, onRefresh, onUpdate, total, t, updating 
         jsxs('div', { className: 'flex flex-wrap gap-2', children: [
           jsx(Button, {
             disabled: updating,
+            size: 'sm',
+            variant: 'secondary',
             onClick: onUpdate,
             children: jsxs(Fragment, { children: [
               jsx(Codicon, { name: 'cloud-download' }),
@@ -649,109 +828,143 @@ function PageHeader({ counts, fetching, onRefresh, onUpdate, total, t, updating 
             ] })
           }),
           jsx(Button, {
+            'aria-label': fetching ? t('refreshing') : t('refresh'),
             disabled: fetching,
-            variant: 'secondary',
+            size: 'icon',
+            title: fetching ? t('refreshing') : t('refresh'),
+            variant: 'ghost',
             onClick: onRefresh,
-            children: jsxs(Fragment, { children: [
-              jsx(Codicon, { name: 'refresh' }),
-              ` ${fetching ? t('refreshing') : t('refresh')}`
-            ] })
+            children: fetching ? jsx(GlyphSpinner, {}) : jsx(Codicon, { name: 'refresh' })
           })
         ] })
       ] }),
       jsxs('div', { className: 'mt-4 flex flex-wrap gap-x-6 gap-y-1', children: [
-        jsx(Stat, { label: t('stats.total'), value: total }),
-        jsx(Stat, { label: t('stats.builtin'), value: counts.builtin || 0 }),
-        jsx(Stat, { label: t('stats.community'), value: counts['hub-installed'] || 0 }),
-        jsx(Stat, { label: t('stats.local'), value: counts.local || 0 })
+        jsx(Stat, { label: t('stats.unsynced'), value: summary.unsynced }),
+        jsx(Stat, { label: t('stats.disabled'), value: summary.disabled }),
+        jsx(Stat, { label: t('stats.restorable'), value: summary.restorable }),
+        jsx(Stat, { label: t('stats.diagnostics'), value: summary.diagnostics })
       ] })
     ]
   })
 }
 
-function FilterPanel({ categories, codexCount, counts, filters, missingCount, onChange, rows, visibleCount, t }) {
-  const showingCodex = filters.source === 'codex'
-  return jsx('section', {
-    className: 'overflow-x-auto rounded-md border border-(--ui-stroke-secondary) p-3',
-    children: jsxs('div', {
-      className: 'flex min-w-max items-center gap-2',
-      children: [
-      jsx('div', {
-        className: 'flex shrink-0 gap-2',
-        children: SOURCES.map(key => jsx(Button, {
+function PathLine({ path, t }) {
+  if (!path) return null
+  return jsxs('div', {
+    className: 'flex min-w-0 items-center gap-1 text-xs text-(--ui-text-tertiary)',
+    children: [
+      jsx(Codicon, { name: 'folder' }),
+      jsx('code', { className: 'min-w-0 truncate', title: path, children: path }),
+      jsx(CopyButton, { appearance: 'inline', label: t('copy'), showLabel: false, text: path })
+    ]
+  })
+}
+
+function FilterPanel({
+  categories, codexCount, counts, filters, hermesCount, missingCount,
+  onChange, onClear, onViewChange, rowCount, totalCount, visibleCount, t
+}) {
+  const showingCodex = filters.view === 'codex'
+  const hasActiveFilters = Boolean(filters.query)
+    || (!showingCodex && (filters.source !== 'all' || filters.category !== 'all' || filters.showMissingBuiltin))
+  const viewOptions = VIEWS.map(id => ({
+    id,
+    label: `${t(`views.${id}`)} ${id === 'hermes' ? hermesCount : codexCount}`
+  }))
+  return jsxs('section', {
+    className: 'space-y-3 rounded-md border border-(--ui-stroke-secondary) p-3',
+    children: [
+      jsxs('div', { className: 'flex flex-wrap items-center justify-between gap-2', children: [
+        jsx(SegmentedControl, { options: viewOptions, value: filters.view, onChange: onViewChange }),
+        jsx('div', {
+          className: 'shrink-0 text-xs text-(--ui-text-tertiary)',
+          children: t('results', visibleCount, totalCount)
+        })
+      ] }),
+      jsxs('div', { className: 'flex flex-wrap items-center gap-2', children: [
+        showingCodex ? null : jsx('div', {
+          className: 'flex flex-wrap gap-1.5',
+          children: SOURCES.map(key => jsx(Button, {
+            'aria-pressed': filters.source === key,
+            size: 'sm',
+            variant: filters.source === key ? 'default' : 'secondary',
+            onClick: () => onChange('source', key),
+            children: `${t(`sources.${key}`)} ${key === 'all' ? rowCount : counts[key] || 0}`
+          }, key))
+        }),
+        jsx(Input, {
+          'aria-label': t('search'),
+          className: 'min-w-[16rem] flex-1',
+          placeholder: t('searchPlaceholder'),
+          value: filters.query,
+          onChange: event => onChange('query', event.target.value)
+        }),
+        showingCodex ? null : jsx('select', {
+          'aria-label': t('fields.category'),
+          className: 'h-8 w-[12rem] shrink-0 rounded border border-(--ui-stroke-secondary) bg-transparent px-2 text-sm',
+          value: filters.category,
+          onChange: event => onChange('category', event.target.value),
+          children: [
+            jsx('option', { value: 'all', children: t('allCategories') }),
+            ...categories.map(value => jsx('option', { value, children: value }, value))
+          ]
+        }),
+        showingCodex ? null : jsxs('label', {
+          className: 'flex min-h-8 shrink-0 items-center gap-2 text-sm',
+          children: [
+            jsx('input', {
+              type: 'checkbox',
+              checked: filters.showMissingBuiltin,
+              onChange: event => onChange('showMissingBuiltin', event.target.checked)
+            }),
+            `${t('showMissingBuiltin')} (${missingCount})`
+          ]
+        }),
+        hasActiveFilters ? jsx(Button, {
           size: 'sm',
-          variant: filters.source === key ? 'default' : 'secondary',
-          onClick: () => onChange('source', key),
-          children: `${t(`sources.${key}`)} ${key === 'all'
-            ? rows.length
-            : key === 'codex' ? codexCount : counts[key] || 0}`
-        }, key))
-      }),
-      jsx('div', {
-        'aria-hidden': true,
-        className: 'mx-1 h-6 w-px shrink-0 bg-(--ui-stroke-secondary)'
-      }),
-      jsx(Input, {
-        'aria-label': t('search'),
-        className: 'w-[22rem] shrink-0',
-        placeholder: t('searchPlaceholder'),
-        value: filters.query,
-        onChange: event => onChange('query', event.target.value)
-      }),
-      showingCodex ? null : jsx('select', {
-        'aria-label': t('fields.category'),
-        className: 'h-8 w-[12rem] shrink-0 rounded border border-(--ui-stroke-secondary) bg-transparent px-2 text-sm',
-        value: filters.category,
-        onChange: event => onChange('category', event.target.value),
-        children: [
-          jsx('option', { value: 'all', children: t('allCategories') }),
-          ...categories.map(value => jsx('option', { value, children: value }, value))
-        ]
-      }),
-      showingCodex ? null : jsxs('label', {
-        className: 'flex min-h-8 shrink-0 items-center gap-2 text-sm',
-        children: [
-          jsx('input', {
-            type: 'checkbox',
-            checked: filters.showDeleted,
-            onChange: event => onChange('showDeleted', event.target.checked)
-          }),
-          `${t('showDeleted')} (${missingCount})`
-        ]
-      }),
-      jsx('div', {
-        className: 'ml-2 shrink-0 text-xs text-(--ui-text-tertiary)',
-        children: t('results', visibleCount, rows.length)
-      })
-      ]
-    })
+          variant: 'ghost',
+          onClick: onClear,
+          children: jsxs(Fragment, { children: [
+            jsx(Codicon, { name: 'clear-all' }),
+            ` ${t('clearFilters')}`
+          ] })
+        }) : null
+      ] })
+    ]
   })
 }
 
 function SkillTable({ busy, language, onAction, onSelect, rows, t }) {
   if (!rows.length) return jsx(EmptyState, { title: t('emptyTitle'), description: t('emptyBody') })
   return jsx('div', {
-    className: 'overflow-x-auto border border-(--ui-stroke-secondary)',
+    className: 'overflow-x-auto rounded-sm border border-(--ui-stroke-secondary)',
     children: jsxs('table', {
-      className: 'w-full min-w-[64rem] table-fixed border-collapse text-sm',
+      'aria-label': t('views.hermes'),
+      className: 'w-full min-w-[58rem] table-fixed border-collapse text-sm',
       children: [
         jsx('thead', {
-          className: 'bg-(--ui-bg-secondary) text-left text-xs text-(--ui-text-tertiary)',
+          className: 'sticky top-0 z-10 bg-(--ui-bg-secondary) text-left text-xs text-(--ui-text-tertiary)',
           children: jsx('tr', { children: [
-            jsx('th', { className: 'w-[29rem] px-3 py-2 font-medium', children: t('table.skill') }),
-            jsx('th', { className: 'w-[9rem] px-3 py-2 font-medium', children: t('table.category') }),
-            jsx('th', { className: 'w-[6rem] px-3 py-2 font-medium', children: t('table.source') }),
-            jsx('th', { className: 'w-[5rem] px-3 py-2 font-medium', children: t('table.type') }),
-            jsx('th', { className: 'w-[15rem] px-3 py-2 text-right font-medium', children: t('table.actions') })
+            jsx('th', {
+              className: 'sticky left-0 z-20 w-[26rem] bg-(--ui-bg-secondary) px-3 py-2 font-medium',
+              children: t('table.skill')
+            }),
+            jsx('th', { className: 'w-[8rem] px-3 py-2 font-medium', children: t('table.category') }),
+            jsx('th', { className: 'w-[10rem] px-3 py-2 font-medium', children: t('table.source') }),
+            jsx('th', { className: 'w-[8rem] px-3 py-2 font-medium', children: t('fields.codexStatus') }),
+            jsx('th', {
+              className: 'sticky right-0 z-20 w-[9rem] bg-(--ui-bg-secondary) px-3 py-2 text-right font-medium',
+              children: t('table.actions')
+            })
           ] })
         }),
         jsx('tbody', {
           className: 'divide-y divide-(--ui-stroke-secondary)',
           children: rows.map(row => jsx('tr', {
-            className: 'align-top hover:bg-(--ui-bg-secondary)',
+            className: 'group align-top hover:bg-(--ui-bg-secondary)',
             children: [
               jsx('td', {
-                className: 'px-3 py-2',
+                className: 'sticky left-0 z-[1] bg-background px-3 py-2 group-hover:bg-(--ui-bg-secondary)',
                 children: jsxs('div', { className: 'min-w-0', children: [
                   jsx('button', {
                     className: 'block max-w-full break-all text-left font-medium hover:underline',
@@ -769,22 +982,15 @@ function SkillTable({ busy, language, onAction, onSelect, rows, t }) {
               jsx('td', { className: 'px-3 py-2', children: row.category || t('root') }),
               jsx('td', {
                 className: 'px-3 py-2',
-                children: jsx('span', {
-                  className: 'block truncate',
-                  title: rawSourceOf(row),
-                  children: rawSourceOf(row)
-                })
+                children: jsx(SourceCell, { row, t })
               }),
               jsx('td', {
                 className: 'px-3 py-2',
-                children: jsx(ToneBadge, {
-                  tone: sourceOf(row),
-                  children: t(`sources.${sourceOf(row)}`)
-                })
+                children: jsx(CodexStatus, { row, t })
               }),
               jsx('td', {
-                className: 'px-3 py-2',
-                children: jsx(ActionButtons, { busy, onAction, row, t })
+                className: 'sticky right-0 z-[1] bg-background px-2 py-1.5 group-hover:bg-(--ui-bg-secondary)',
+                children: jsx(ActionButtons, { busy, compact: true, onAction, row, t })
               })
             ]
           }, `${sourceOf(row)}:${row.name}`))
@@ -797,8 +1003,8 @@ function SkillTable({ busy, language, onAction, onSelect, rows, t }) {
 function SkillManagePage() {
   const t = usePluginI18n(ID)
   const [filters, setFilters] = useState({
-    query: '', source: 'all', category: 'all',
-    showDeleted: false
+    view: 'hermes', query: '', source: 'all', category: 'all',
+    showMissingBuiltin: false
   })
   const [selected, setSelected] = useState(null)
   const [pending, setPending] = useState(null)
@@ -818,9 +1024,21 @@ function SkillManagePage() {
   const pluginUpdate = usePluginUpdate(t, () => setPluginUpdateOpen(false))
   const data = inventory.data || {}
   const language = t('language') === 'zh' ? 'zh' : 'en'
-  const view = useInventoryView(data, { ...filters, language }, filters.showDeleted, t)
-  const showingCodex = filters.source === 'codex'
+  const view = useInventoryView(data, { ...filters, language }, filters.showMissingBuiltin, t)
+  const showingCodex = filters.view === 'codex'
+  const diagnostics = asArray(data.diagnostics)
+  const summary = {
+    unsynced: view.installed.filter(row => canSync(row) && !row.codexInstalled).length,
+    disabled: view.installed.filter(row => row.status === 'disabled').length,
+    restorable: view.missing.length,
+    diagnostics: diagnostics.length
+  }
+  const visibleCount = showingCodex ? view.codexVisible.length : view.visible.length
+  const totalCount = showingCodex ? view.codex.length : view.rows.length
   const changeFilter = (key, value) => setFilters(current => ({ ...current, [key]: value }))
+  const clearFilters = () => setFilters(current => ({
+    ...current, query: '', source: 'all', category: 'all', showMissingBuiltin: false
+  }))
   const beginAction = (row, action) => requiresConfirmation(row, action)
     ? setPending({ row, action })
     : mutation.mutate({ row, action, confirm: '' })
@@ -846,38 +1064,40 @@ function SkillManagePage() {
   return jsxs(Fragment, { children: [
     jsxs('div', { className: 'flex h-full min-h-0 flex-col', children: [
       jsx(PageHeader, {
-        counts: view.installedCounts,
         fetching: inventory.isFetching,
         onRefresh: () => inventory.refetch(),
         onUpdate: () => setPluginUpdateOpen(true),
-        total: view.installed.length,
+        summary,
         t,
         updating: pluginUpdate.isPending
       }),
       jsx(ScrollArea, {
         className: 'min-h-0 flex-1',
         children: jsxs('main', { className: 'mx-auto w-full max-w-7xl space-y-4 p-4', children: [
-          jsx('code', {
-            className: 'block max-w-full break-all text-xs text-(--ui-text-tertiary)',
-            children: data.meta?.skillsDir
+          jsx(Diagnostics, { rows: diagnostics, t }),
+          jsx(PathLine, {
+            path: showingCodex ? data.meta?.codexSkillsDir : data.meta?.skillsDir,
+            t
           }),
-          jsx(Diagnostics, { rows: asArray(data.diagnostics), t }),
           jsx(FilterPanel, {
             categories: view.categories,
             codexCount: view.codex.length,
             counts: view.rowCounts,
             filters,
+            hermesCount: view.installed.length,
             missingCount: data.missingBuiltinCount || 0,
             onChange: changeFilter,
-            rows: view.rows,
-            visibleCount: showingCodex ? view.codexVisible.length : view.visible.length,
+            onClear: clearFilters,
+            onViewChange: value => changeFilter('view', value),
+            rowCount: view.rows.length,
+            totalCount,
+            visibleCount,
             t
           }),
           showingCodex
             ? jsx(CodexTable, {
                 busy: mutation.isPending,
                 onAction: beginAction,
-                path: data.meta?.codexSkillsDir,
                 rows: view.codexVisible,
                 t
               })
