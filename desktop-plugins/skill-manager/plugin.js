@@ -1,8 +1,7 @@
 /** Native Hermes Desktop skill manager. Plain ESM; no build step. */
 import {
-  Badge, Button, Codicon, CopyButton, DropdownMenu, DropdownMenuContent,
-  DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger, EmptyState,
-  ErrorState, GlyphSpinner, Input, SegmentedControl,
+  Badge, Button, Codicon, CopyButton, EmptyState, ErrorState, GlyphSpinner,
+  Input, SegmentedControl,
   PALETTE_AREA, ROUTES_AREA, SIDEBAR_NAV_AREA, ScrollArea, cn, host,
   useMutation, usePluginI18n, useQuery, useQueryClient
 } from '@hermes/plugin-sdk'
@@ -46,7 +45,6 @@ const MESSAGES = {
     showMissingBuiltin: 'Show restorable built-ins',
     results: (shown, total) => `${shown} of ${total}`,
     clearFilters: 'Clear filters',
-    moreActions: 'More actions',
     copy: 'Copy',
     allCategories: 'All categories',
     root: '(root)',
@@ -69,14 +67,14 @@ const MESSAGES = {
     nav: 'Skill Manager',
     open: 'Open Skill Manager',
     views: { hermes: 'Hermes skills', codex: 'Codex skills' },
-    stats: { unsynced: 'Not in Codex', disabled: 'Disabled', restorable: 'Restorable', diagnostics: 'Diagnostics' },
+    stats: { disabled: 'Disabled', restorable: 'Restorable', diagnostics: 'Diagnostics' },
     sources: {
       all: 'All', builtin: 'Built-in', 'hub-installed': 'Community',
       local: 'Local', codex: 'Codex'
     },
     statuses: { all: 'All statuses', enabled: 'Enabled', disabled: 'Disabled', deleted: 'Deleted' },
     trust: { builtin: 'Built-in', official: 'Official', community: 'Community', local: 'Local' },
-    codex: { installed: 'In Codex', notInstalled: 'Not in Codex' },
+    hermesSync: { title: 'Hermes sync', synced: 'Synced from Hermes', codexOnly: 'Codex only' },
     codexList: {
       title: 'Codex user skills',
       count: value => `${value} skills`,
@@ -89,13 +87,13 @@ const MESSAGES = {
     fields: {
       category: 'Category', source: 'Source', type: 'Type', trust: 'Trust', status: 'Status',
       path: 'Hermes path', identifier: 'Identifier', installed: 'Installed',
-      updated: 'Updated', codexStatus: 'Codex status', codexPath: 'Codex path'
+      updated: 'Updated'
     },
     actions: {
       delete: 'Delete', reset: 'Reset', update: 'Update', restore: 'Restore',
-      'sync-codex': 'Sync', resync: 'Sync again', 'delete-codex': 'Delete', 'plugin-update': 'Plugin update'
+      'sync-codex': 'Sync', 'delete-codex': 'Delete', 'plugin-update': 'Plugin update'
     },
-    detailGroups: { overview: 'Overview', location: 'Location', codex: 'Codex sync' },
+    detailGroups: { overview: 'Overview', location: 'Location' },
     confirmTitle: {
       delete: 'Delete skill', 'delete-codex': 'Delete Codex skill',
       reset: 'Reset skill', 'sync-codex': 'Replace Codex skill'
@@ -125,7 +123,6 @@ const MESSAGES = {
     showMissingBuiltin: '显示可恢复的内建技能',
     results: (shown, total) => `显示 ${shown} / ${total}`,
     clearFilters: '清除筛选',
-    moreActions: '更多操作',
     copy: '复制',
     allCategories: '全部分类',
     root: '（根目录）',
@@ -148,14 +145,14 @@ const MESSAGES = {
     nav: '技能管理',
     open: '打开技能管理',
     views: { hermes: 'Hermes 技能', codex: 'Codex 技能' },
-    stats: { unsynced: '未同步', disabled: '已停用', restorable: '可恢复', diagnostics: '诊断' },
+    stats: { disabled: '已停用', restorable: '可恢复', diagnostics: '诊断' },
     sources: {
       all: '全部', builtin: '内建', 'hub-installed': '社区',
       local: '本地', codex: 'Codex'
     },
     statuses: { all: '全部状态', enabled: '启用', disabled: '停用', deleted: '已删除' },
     trust: { builtin: '内建', official: '官方', community: '社区', local: '本地' },
-    codex: { installed: '已在 Codex', notInstalled: '未在 Codex' },
+    hermesSync: { title: 'Hermes 同步', synced: '同步于 Hermes', codexOnly: '仅 Codex' },
     codexList: {
       title: 'Codex 用户技能',
       count: value => `${value} 个技能`,
@@ -168,13 +165,13 @@ const MESSAGES = {
     fields: {
       category: '分类', source: '来源', type: '类型', trust: '信任', status: '状态',
       path: 'Hermes 路径', identifier: '标识', installed: '安装时间',
-      updated: '更新时间', codexStatus: 'Codex 状态', codexPath: 'Codex 路径'
+      updated: '更新时间'
     },
     actions: {
       delete: '删除', reset: '重置', update: '更新', restore: '恢复',
-      'sync-codex': '同步', resync: '重新同步', 'delete-codex': '删除', 'plugin-update': '插件更新'
+      'sync-codex': '同步', 'delete-codex': '删除', 'plugin-update': '插件更新'
     },
-    detailGroups: { overview: '基本信息', location: '来源与路径', codex: 'Codex 同步' },
+    detailGroups: { overview: '基本信息', location: '来源与路径' },
     confirmTitle: {
       delete: '删除技能', 'delete-codex': '删除 Codex 技能',
       reset: '重置技能', 'sync-codex': '覆盖 Codex 技能'
@@ -207,9 +204,7 @@ const actionVariant = action => ['delete', 'delete-codex'].includes(action)
   : action === 'sync-codex' ? 'default' : 'secondary'
 const requiresConfirmation = (row, action) => CONFIRMED_ACTIONS.has(action)
   || (action === 'sync-codex' && row.codexInstalled)
-const actionLabel = (row, action, t) => action === 'sync-codex' && row.codexInstalled
-  ? t('actions.resync')
-  : t(`actions.${action}`)
+const actionLabel = (_row, action, t) => t(`actions.${action}`)
 const hasValue = value => value !== undefined && value !== null && value !== '' && value !== '-'
 
 function useDialogA11y(open, onClose, closable = true) {
@@ -318,14 +313,23 @@ function filterRows(rows, filters) {
 function filterCodexRows(rows, query) {
   const needle = query.trim().toLowerCase()
   return rows.filter(row => !needle || [
-    row.name, row.description, row.relativePath, row.path
+    row.name, row.description, row.relativePath, row.path,
+    row.hermesSkill?.name, row.hermesSkill?.source, row.hermesSkill?.kind
   ].join('\n').toLowerCase().includes(needle))
+}
+
+function linkCodexToHermes(codexRows, hermesRows) {
+  const syncedByName = new Map(
+    hermesRows.filter(row => row.codexInstalled).map(row => [row.name, row])
+  )
+  return codexRows.map(row => ({ ...row, hermesSkill: syncedByName.get(row.name) || null }))
 }
 
 function useInventoryView(data, filters, showMissingBuiltin, t) {
   const installed = asArray(data.skills)
   const missing = asArray(data.missingBuiltinSkills)
   const codex = asArray(data.codexSkills)
+  const linkedCodex = useMemo(() => linkCodexToHermes(codex, installed), [codex, installed])
   const rows = showMissingBuiltin ? installed.concat(missing) : installed
   const categories = useMemo(
     () => Array.from(new Set(rows.map(row => row.category || t('root')))).sort(),
@@ -337,11 +341,11 @@ function useInventoryView(data, filters, showMissingBuiltin, t) {
     [rows, filters.query, filters.source, filters.category, filters.language, t]
   )
   const codexVisible = useMemo(
-    () => filterCodexRows(codex, filters.query),
-    [codex, filters.query]
+    () => filterCodexRows(linkedCodex, filters.query),
+    [linkedCodex, filters.query]
   )
   return {
-    categories, codex, codexVisible, installed, missing, rowCounts, rows, visible
+    categories, codex: linkedCodex, codexVisible, installed, missing, rowCounts, rows, visible
   }
 }
 
@@ -410,72 +414,15 @@ function Stat({ label, value }) {
   })
 }
 
-function ActionMenu({ actions, busy, onAction, row, t }) {
-  if (!actions.length) return null
-  const regular = actions.filter(action => !['delete', 'delete-codex'].includes(action))
-  const destructive = actions.filter(action => ['delete', 'delete-codex'].includes(action))
-  return jsxs(DropdownMenu, { children: [
-    jsx(DropdownMenuTrigger, {
-      asChild: true,
-      children: jsx(Button, {
-        'aria-label': t('moreActions'),
-        disabled: busy,
-        size: 'icon',
-        title: t('moreActions'),
-        variant: 'ghost',
-        children: jsx(Codicon, { name: 'kebab-vertical' })
-      })
-    }),
-    jsxs(DropdownMenuContent, {
-      align: 'end',
-      className: 'w-40',
-      sideOffset: 6,
-      children: [
-        ...regular.map(action => jsx(DropdownMenuItem, {
-          disabled: busy,
-          onSelect: () => onAction(row, action),
-          children: actionLabel(row, action, t)
-        }, action)),
-        destructive.length && regular.length ? jsx(DropdownMenuSeparator, {}) : null,
-        ...destructive.map(action => jsx(DropdownMenuItem, {
-          disabled: busy,
-          onSelect: () => onAction(row, action),
-          variant: 'destructive',
-          children: actionLabel(row, action, t)
-        }, action))
-      ]
-    })
-  ] })
-}
-
-function ActionButtons({ busy, compact = false, onAction, row, t }) {
+function ActionButtons({ busy, onAction, row, t }) {
   const actions = actionsOf(row)
   if (!actions.length) return null
-  if (compact) {
-    const primary = actions.includes('sync-codex')
-      ? 'sync-codex'
-      : actions.includes('restore') ? 'restore' : actions[0]
-    const remaining = actions.filter(action => action !== primary)
-    return jsxs('div', {
-      className: 'flex items-center justify-end gap-1.5',
-      children: [
-        jsx(Button, {
-          disabled: busy,
-          size: 'sm',
-          variant: primary === 'sync-codex' && row.codexInstalled ? 'secondary' : actionVariant(primary),
-          onClick: () => onAction(row, primary),
-          children: actionLabel(row, primary, t)
-        }),
-        jsx(ActionMenu, { actions: remaining, busy, onAction, row, t })
-      ]
-    })
-  }
   return jsx('div', {
     className: 'flex flex-wrap items-center gap-2 md:justify-end',
     children: actions.map(action => jsx(Button, {
       disabled: busy,
       size: 'sm',
-      variant: action === 'sync-codex' && row.codexInstalled ? 'secondary' : actionVariant(action),
+      variant: actionVariant(action),
       onClick: () => onAction(row, action),
       children: actionLabel(row, action, t)
     }, action))
@@ -496,12 +443,22 @@ function SourceCell({ row, t }) {
   ] })
 }
 
-function CodexStatus({ row, t }) {
-  if (!canSync(row)) return jsx('span', { className: 'text-(--ui-text-tertiary)', children: '—' })
-  return jsx(ToneBadge, {
-    tone: row.codexInstalled ? 'installed' : 'missing',
-    children: row.codexInstalled ? t('codex.installed') : t('codex.notInstalled')
-  })
+function HermesSyncStatus({ row, t }) {
+  const hermes = row.hermesSkill
+  if (!hermes) return jsx(ToneBadge, { tone: 'missing', children: t('hermesSync.codexOnly') })
+  const kind = sourceOf(hermes)
+  const raw = rawSourceOf(hermes)
+  const sourceLabel = ['builtin', 'local'].includes(kind) || raw === kind
+    ? t(`sources.${kind}`)
+    : `${t(`sources.${kind}`)} · ${raw}`
+  return jsxs('div', { className: 'min-w-0 space-y-1', children: [
+    jsx(ToneBadge, { tone: 'installed', children: t('hermesSync.synced') }),
+    jsx('div', {
+      className: 'truncate text-xs text-(--ui-text-tertiary)',
+      title: sourceLabel,
+      children: sourceLabel
+    })
+  ] })
 }
 
 function DetailField({ copyable = false, label, t, value }) {
@@ -553,10 +510,6 @@ function DetailDrawer({ busy, language, onAction, onClose, row, t }) {
     [t('fields.installed'), row.installedAt],
     [t('fields.updated'), row.updatedAt]
   ]
-  const codexFields = canSync(row) ? [
-    [t('fields.codexStatus'), row.codexInstalled ? t('codex.installed') : t('codex.notInstalled')],
-    [t('fields.codexPath'), row.codexPath, true]
-  ] : []
   return jsx('div', {
     className: 'fixed inset-0 z-40 flex justify-end bg-background/60 backdrop-blur-[1px]',
     role: 'presentation',
@@ -593,8 +546,7 @@ function DetailDrawer({ busy, language, onAction, onClose, row, t }) {
               children: descriptionOf(row, language) || t('noDescription')
             }),
             jsx(DetailGroup, { fields: overviewFields, label: t('detailGroups.overview'), t }),
-            jsx(DetailGroup, { fields: locationFields, label: t('detailGroups.location'), t }),
-            jsx(DetailGroup, { fields: codexFields, label: t('detailGroups.codex'), t })
+            jsx(DetailGroup, { fields: locationFields, label: t('detailGroups.location'), t })
           ] })
         }),
         actionsOf(row).length ? jsx('footer', {
@@ -757,18 +709,22 @@ function CodexTable({ busy, onAction, rows, t }) {
     className: 'overflow-x-auto rounded-sm border border-(--ui-stroke-secondary)',
     children: jsxs('table', {
       'aria-label': t('codexList.title'),
-      className: 'w-full min-w-[42rem] table-fixed border-collapse text-sm',
+      className: 'w-full min-w-[56rem] table-fixed border-collapse text-sm',
       children: [
         jsx('thead', {
           className: 'sticky top-0 z-10 bg-(--ui-bg-secondary) text-left text-xs text-(--ui-text-tertiary)',
           children: jsx('tr', { children: [
             jsx('th', {
-              className: 'sticky left-0 z-20 w-[23rem] bg-(--ui-bg-secondary) px-3 py-2 font-medium',
+              className: 'sticky left-0 z-20 w-[23rem] bg-(--ui-bg-secondary) px-3 py-2 align-middle font-medium',
               children: t('table.skill')
             }),
-            jsx('th', { className: 'w-[16rem] px-3 py-2 font-medium', children: t('table.path') }),
+            jsx('th', { className: 'w-[16rem] px-3 py-2 align-middle font-medium', children: t('table.path') }),
             jsx('th', {
-              className: 'sticky right-0 z-20 w-[3rem] bg-(--ui-bg-secondary) px-3 py-2 text-right font-medium',
+              className: 'w-[10rem] px-3 py-2 align-middle font-medium',
+              children: t('hermesSync.title')
+            }),
+            jsx('th', {
+              className: 'sticky right-0 z-20 w-[7rem] bg-(--ui-bg-secondary) px-3 py-2 text-right align-middle font-medium',
               children: t('table.actions')
             })
           ] })
@@ -776,10 +732,10 @@ function CodexTable({ busy, onAction, rows, t }) {
         jsx('tbody', {
           className: 'divide-y divide-(--ui-stroke-secondary)',
           children: rows.map(row => jsx('tr', {
-            className: 'group align-top hover:bg-(--ui-bg-secondary)',
+            className: 'group align-middle hover:bg-(--ui-bg-secondary)',
             children: [
               jsx('td', {
-                className: 'sticky left-0 z-[1] bg-background px-3 py-2 group-hover:bg-(--ui-bg-secondary)',
+                className: 'sticky left-0 z-[1] bg-background px-3 py-2 align-middle group-hover:bg-(--ui-bg-secondary)',
                 children: jsxs('div', { className: 'min-w-0', children: [
                   jsx('div', { className: 'break-all font-medium', children: row.name }),
                   jsx('div', {
@@ -790,13 +746,21 @@ function CodexTable({ busy, onAction, rows, t }) {
                 ] })
               }),
               jsx('td', {
-                className: 'px-3 py-2',
+                className: 'px-3 py-2 align-middle',
                 children: jsx('code', { className: 'break-all text-xs', children: row.relativePath })
               }),
               jsx('td', {
-                className: 'sticky right-0 z-[1] bg-background px-2 py-1.5 text-right group-hover:bg-(--ui-bg-secondary)',
-                children: jsx(ActionMenu, {
-                  actions: ['delete-codex'], busy, onAction, row, t
+                className: 'px-3 py-2 align-middle',
+                children: jsx(HermesSyncStatus, { row, t })
+              }),
+              jsx('td', {
+                className: 'sticky right-0 z-[1] bg-background px-2 py-1.5 text-right align-middle group-hover:bg-(--ui-bg-secondary)',
+                children: jsx(Button, {
+                  disabled: busy,
+                  size: 'sm',
+                  variant: 'destructive',
+                  onClick: () => onAction(row, 'delete-codex'),
+                  children: t('actions.delete-codex')
                 })
               })
             ]
@@ -839,7 +803,6 @@ function PageHeader({ fetching, onRefresh, onUpdate, summary, t, updating }) {
         ] })
       ] }),
       jsxs('div', { className: 'mt-4 flex flex-wrap gap-x-6 gap-y-1', children: [
-        jsx(Stat, { label: t('stats.unsynced'), value: summary.unsynced }),
         jsx(Stat, { label: t('stats.disabled'), value: summary.disabled }),
         jsx(Stat, { label: t('stats.restorable'), value: summary.restorable }),
         jsx(Stat, { label: t('stats.diagnostics'), value: summary.diagnostics })
@@ -940,20 +903,19 @@ function SkillTable({ busy, language, onAction, onSelect, rows, t }) {
     className: 'overflow-x-auto rounded-sm border border-(--ui-stroke-secondary)',
     children: jsxs('table', {
       'aria-label': t('views.hermes'),
-      className: 'w-full min-w-[58rem] table-fixed border-collapse text-sm',
+      className: 'w-full min-w-[60rem] table-fixed border-collapse text-sm',
       children: [
         jsx('thead', {
           className: 'sticky top-0 z-10 bg-(--ui-bg-secondary) text-left text-xs text-(--ui-text-tertiary)',
           children: jsx('tr', { children: [
             jsx('th', {
-              className: 'sticky left-0 z-20 w-[26rem] bg-(--ui-bg-secondary) px-3 py-2 font-medium',
+              className: 'sticky left-0 z-20 w-[26rem] bg-(--ui-bg-secondary) px-3 py-2 align-middle font-medium',
               children: t('table.skill')
             }),
-            jsx('th', { className: 'w-[8rem] px-3 py-2 font-medium', children: t('table.category') }),
-            jsx('th', { className: 'w-[10rem] px-3 py-2 font-medium', children: t('table.source') }),
-            jsx('th', { className: 'w-[8rem] px-3 py-2 font-medium', children: t('fields.codexStatus') }),
+            jsx('th', { className: 'w-[8rem] px-3 py-2 align-middle font-medium', children: t('table.category') }),
+            jsx('th', { className: 'w-[10rem] px-3 py-2 align-middle font-medium', children: t('table.source') }),
             jsx('th', {
-              className: 'sticky right-0 z-20 w-[9rem] bg-(--ui-bg-secondary) px-3 py-2 text-right font-medium',
+              className: 'sticky right-0 z-20 w-[16rem] bg-(--ui-bg-secondary) px-3 py-2 text-right align-middle font-medium',
               children: t('table.actions')
             })
           ] })
@@ -961,10 +923,10 @@ function SkillTable({ busy, language, onAction, onSelect, rows, t }) {
         jsx('tbody', {
           className: 'divide-y divide-(--ui-stroke-secondary)',
           children: rows.map(row => jsx('tr', {
-            className: 'group align-top hover:bg-(--ui-bg-secondary)',
+            className: 'group align-middle hover:bg-(--ui-bg-secondary)',
             children: [
               jsx('td', {
-                className: 'sticky left-0 z-[1] bg-background px-3 py-2 group-hover:bg-(--ui-bg-secondary)',
+                className: 'sticky left-0 z-[1] bg-background px-3 py-2 align-middle group-hover:bg-(--ui-bg-secondary)',
                 children: jsxs('div', { className: 'min-w-0', children: [
                   jsx('button', {
                     className: 'block max-w-full break-all text-left font-medium hover:underline',
@@ -979,18 +941,14 @@ function SkillTable({ busy, language, onAction, onSelect, rows, t }) {
                   })
                 ] })
               }),
-              jsx('td', { className: 'px-3 py-2', children: row.category || t('root') }),
+              jsx('td', { className: 'px-3 py-2 align-middle', children: row.category || t('root') }),
               jsx('td', {
-                className: 'px-3 py-2',
+                className: 'px-3 py-2 align-middle',
                 children: jsx(SourceCell, { row, t })
               }),
               jsx('td', {
-                className: 'px-3 py-2',
-                children: jsx(CodexStatus, { row, t })
-              }),
-              jsx('td', {
-                className: 'sticky right-0 z-[1] bg-background px-2 py-1.5 group-hover:bg-(--ui-bg-secondary)',
-                children: jsx(ActionButtons, { busy, compact: true, onAction, row, t })
+                className: 'sticky right-0 z-[1] bg-background px-2 py-1.5 align-middle group-hover:bg-(--ui-bg-secondary)',
+                children: jsx(ActionButtons, { busy, onAction, row, t })
               })
             ]
           }, `${sourceOf(row)}:${row.name}`))
@@ -1028,7 +986,6 @@ function SkillManagePage() {
   const showingCodex = filters.view === 'codex'
   const diagnostics = asArray(data.diagnostics)
   const summary = {
-    unsynced: view.installed.filter(row => canSync(row) && !row.codexInstalled).length,
     disabled: view.installed.filter(row => row.status === 'disabled').length,
     restorable: view.missing.length,
     diagnostics: diagnostics.length

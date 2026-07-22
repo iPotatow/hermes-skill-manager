@@ -51,25 +51,28 @@ test('desktop renders Hermes and Codex user skills as tables without skill cards
   assert.match(source, /function SkillTable/)
   assert.match(source, /function CodexTable/)
   assert.match(source, /jsxs\('table'/)
-  assert.match(source, /actions: \['delete-codex'\]/)
+  assert.match(source, /onClick: \(\) => onAction\(row, 'delete-codex'\)/)
   assert.doesNotMatch(source, /function SkillCard/)
   assert.doesNotMatch(source, /function SkillList/)
   assert.doesNotMatch(source, /codexList\.(?:system|user)/)
 })
 
 test('descriptions sit below skill names and stay on one line', () => {
-  assert.match(source, /min-w-\[58rem\] table-fixed/)
-  assert.match(source, /min-w-\[42rem\] table-fixed/)
+  assert.match(source, /min-w-\[60rem\] table-fixed/)
+  assert.match(source, /min-w-\[56rem\] table-fixed/)
   assert.match(source, /className: 'mt-0\.5 truncate text-xs text-\(--ui-text-secondary\)'/)
   assert.match(source, /title: descriptionOf\(row, language\) \|\| t\('noDescription'\)/)
   assert.match(source, /title: row\.description \|\| t\('noDescription'\)/)
 })
 
-test('main table merges source and type and surfaces Codex status', () => {
+test('Hermes table omits Codex status while Codex rows show their Hermes relationship', () => {
   assert.match(source, /skill: '技能', category: '分类', source: '来源', type: '类型'/)
   assert.match(source, /function SourceCell/)
-  assert.match(source, /function CodexStatus/)
-  assert.match(source, /table\.skill[\s\S]*table\.category[\s\S]*table\.source[\s\S]*fields\.codexStatus[\s\S]*table\.actions/)
+  assert.match(source, /function HermesSyncStatus/)
+  assert.match(source, /function linkCodexToHermes/)
+  assert.match(source, /hermesRows\.filter\(row => row\.codexInstalled\)/)
+  assert.match(source, /children: t\('hermesSync\.title'\)/)
+  assert.doesNotMatch(source, /codexStatus|CodexStatus|detailGroups\.codex/)
   assert.doesNotMatch(source, /children:\s*t\('table\.type'\)/)
   assert.match(source, /const rawSourceOf = row => row\.rawSource \|\| row\.source \|\| sourceOf\(row\)/)
 })
@@ -85,13 +88,19 @@ test('search and filters wrap responsively and can be cleared', () => {
   assert.doesNotMatch(source, /onChange\('status'/)
 })
 
-test('row actions keep sync visible and move secondary actions into a native menu', () => {
-  assert.match(source, /function ActionMenu/)
-  assert.match(source, /jsx\(DropdownMenuTrigger/)
+test('row actions are rendered as direct buttons without dropdown menus', () => {
+  assert.match(source, /function ActionButtons/)
+  assert.match(source, /children: actions\.map\(action => jsx\(Button/)
+  assert.match(source, /onClick: \(\) => onAction\(row, action\)/)
+  assert.match(source, /onClick: \(\) => onAction\(row, 'delete-codex'\)/)
   assert.match(source, /variant: 'destructive'/)
-  assert.match(source, /const primary = actions\.includes\('sync-codex'\)/)
-  assert.match(source, /compact: true/)
-  assert.match(source, /resync: '重新同步'/)
+  assert.doesNotMatch(source, /ActionMenu|DropdownMenu|moreActions|resync/)
+})
+
+test('table headers and cells are vertically centered', () => {
+  assert.match(source, /className: 'group align-middle hover:bg-\(--ui-bg-secondary\)'/)
+  assert.match(source, /px-3 py-2 align-middle/)
+  assert.doesNotMatch(source, /align-top/)
 })
 
 test('confirmation dialog can fill the exact skill name with one click', () => {
@@ -131,6 +140,7 @@ test('drawers and confirmation overlays support keyboard focus and copyable path
   assert.match(source, /'aria-labelledby': 'skill-detail-title'/)
   assert.match(source, /'aria-labelledby': 'skill-confirm-title'/)
   assert.match(source, /jsx\(CopyButton/)
+  assert.doesNotMatch(source, /codexFields/)
 })
 
 test('desktop plugin avoids hard-coded color literals', () => {
