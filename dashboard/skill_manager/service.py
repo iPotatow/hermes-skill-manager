@@ -110,7 +110,28 @@ class SkillManager:
         self._confirm(confirm, name)
         row = self.inventory_reader.find(source, name)
         if self._kind(row) == "hub-installed":
+            displayed_target = self.inventory_reader.safe_target(row["installPath"])
+            if displayed_target.exists() and (
+                not displayed_target.is_dir()
+                or not (displayed_target / "SKILL.md").is_file()
+                or (displayed_target / "SKILL.md").is_symlink()
+            ):
+                raise SkillManagerError(400, "界面中的社区技能路径无效，拒绝删除")
             self._run_external(lambda: self.runtime.uninstall(row["name"]))
+            # A stale duplicate can be the path currently displayed while the
+            # Hub lock points at a different installation path. Uninstalling
+            # clears the lock-owned copy; remove the exact displayed copy too
+            # so it cannot immediately reappear as a local skill.
+            if displayed_target.exists():
+                displayed_target = self.inventory_reader.safe_target(row["installPath"])
+                if (
+                    displayed_target.is_dir()
+                    and (displayed_target / "SKILL.md").is_file()
+                    and not (displayed_target / "SKILL.md").is_symlink()
+                ):
+                    shutil.rmtree(displayed_target)
+                else:
+                    raise SkillManagerError(409, "社区技能卸载后路径发生变化，已停止清理")
         else:
             target = self.inventory_reader.safe_target(row["installPath"])
             if not target.exists():

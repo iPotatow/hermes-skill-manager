@@ -15,6 +15,7 @@
 - 技能详情、最近操作、诊断与自动刷新
 - 页面顶部提供插件更新按钮，点击后需再次确认；更新成功会自动热加载 Desktop 入口
 - 内建技能重置、删除、恢复；Hub 技能重置、更新、删除；本地技能删除
+- 删除社区技能时同时清理界面当前发现的残留副本并刷新发现缓存，避免被重新识别为本地技能
 - 删除和重置要求输入完整技能名确认，确认框可一键填入名称
 - 内建、社区和本地技能均显示“同步”按钮，可一键同步到 `$CODEX_HOME/skills/<技能名>`；覆盖已有 Codex 技能时要求输入完整技能名确认
 - Hermes 主表按“技能、分类、来源、操作”展示，不再显示 Codex 状态；来源类型与具体仓库合并显示，简介位于技能名下方并限制为一行
@@ -94,4 +95,4 @@ node --test tests/desktop_plugin_smoke.test.js
 python3 -m unittest discover -s tests -v
 ```
 
-插件 ID：`skill-manager` · Desktop 路径：`/skill-manager` · 版本：`1.6.1`
+插件 ID：`skill-manager` · Desktop 路径：`/skill-manager` · 版本：`1.6.2`

@@ -1,5 +1,5 @@
 name: skill-manager
-version: 1.6.1
+version: 1.6.2
 description: "Native Hermes Desktop plugin for managing Hermes skills and Codex user skills."
 author: iPotatow
 kind: standalone

@@ -20,6 +20,14 @@ class HermesRuntime:
             clear_skills_system_prompt_cache(clear_snapshot=True)
         except Exception:
             pass
+        try:
+            from tools import skills_tool
+
+            discovery_cache = getattr(skills_tool, "_SKILLS_CACHE", None)
+            if hasattr(discovery_cache, "clear"):
+                discovery_cache.clear()
+        except Exception:
+            pass
 
     @staticmethod
     def uninstall(name: str) -> None:

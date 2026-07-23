@@ -461,6 +461,60 @@ class BackendSkillContractTest(unittest.TestCase):
                 method("builtin", "example", "wrong")
             self.assertEqual(raised.exception.status_code, 400)
 
+    def test_hub_delete_removes_the_displayed_copy_left_outside_the_lock_path(self):
+        with tempfile.TemporaryDirectory() as directory:
+            displayed = Path(directory) / "skills" / "productivity" / "demo"
+            displayed.mkdir(parents=True)
+            (displayed / "SKILL.md").write_text(
+                "---\nname: demo\ndescription: duplicate community skill\n---\n",
+                encoding="utf-8",
+            )
+            row = {
+                "name": "demo",
+                "kind": "hub-installed",
+                "source": "skills.sh",
+                "installPath": "productivity/demo",
+            }
+            state = StateStub()
+            runtime = RuntimeStub()
+            manager = SkillManager(
+                inventory=InventoryStub([row], displayed, Path(directory) / "codex"),
+                state=state,
+                runtime=runtime,
+            )
+
+            result = manager.delete("hub-installed", "demo", "demo")
+
+            self.assertTrue(result["ok"])
+            self.assertFalse(displayed.exists())
+            self.assertEqual(runtime.calls, [("uninstall", "demo")])
+            self.assertEqual(state.events[0]["source"], "hub-installed")
+
+    def test_runtime_cache_clear_invalidates_prompt_and_discovery_caches(self):
+        prompt_builder = types.ModuleType("agent.prompt_builder")
+        prompt_calls = []
+        prompt_builder.clear_skills_system_prompt_cache = (
+            lambda **kwargs: prompt_calls.append(kwargs)
+        )
+        agent_package = types.ModuleType("agent")
+        agent_package.prompt_builder = prompt_builder
+
+        skills_tool = types.ModuleType("tools.skills_tool")
+        skills_tool._SKILLS_CACHE = {"with_disabled": ("stale",)}
+        tools_package = types.ModuleType("tools")
+        tools_package.skills_tool = skills_tool
+
+        with patch.dict(sys.modules, {
+            "agent": agent_package,
+            "agent.prompt_builder": prompt_builder,
+            "tools": tools_package,
+            "tools.skills_tool": skills_tool,
+        }):
+            HermesRuntime.clear_skill_cache()
+
+        self.assertEqual(prompt_calls, [{"clear_snapshot": True}])
+        self.assertEqual(skills_tool._SKILLS_CACHE, {})
+
     def test_all_hermes_content_mutations_clear_cache_and_record(self):
         with tempfile.TemporaryDirectory() as directory:
             local_path = Path(directory) / "local"
