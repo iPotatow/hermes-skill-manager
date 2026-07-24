@@ -1,7 +1,7 @@
 /** Native Hermes Desktop skill manager. Plain ESM; no build step. */
 import {
   Badge, Button, Codicon, CopyButton, EmptyState, ErrorState, GlyphSpinner,
-  Input, SegmentedControl,
+  Input, SegmentedControl, StatusDot,
   PALETTE_AREA, ROUTES_AREA, SIDEBAR_NAV_AREA, ScrollArea, cn, host,
   useMutation, usePluginI18n, useQuery, useQueryClient
 } from '@hermes/plugin-sdk'
@@ -64,6 +64,19 @@ const MESSAGES = {
     confirmPlaceholder: 'Type the exact skill name',
     confirmFill: 'Fill name',
     success: (action, name) => `${action}: ${name}`,
+    operation: {
+      title: 'Operation progress',
+      subject: (action, name) => `${action} · ${name}`,
+      dismiss: 'Dismiss progress',
+      phases: {
+        confirm: 'Waiting for confirmation',
+        execute: 'Applying change',
+        refresh: 'Refreshing inventory',
+        success: 'Completed',
+        error: 'Failed'
+      },
+      steps: { confirm: 'Confirm', execute: 'Apply', refresh: 'Refresh' }
+    },
     nav: 'Skill Manager',
     open: 'Open Skill Manager',
     views: { hermes: 'Hermes skills', codex: 'Codex skills' },
@@ -142,6 +155,19 @@ const MESSAGES = {
     confirmPlaceholder: '输入完整技能名',
     confirmFill: '填入名称',
     success: (action, name) => `${action}：${name}`,
+    operation: {
+      title: '操作进度',
+      subject: (action, name) => `${action} · ${name}`,
+      dismiss: '关闭进度',
+      phases: {
+        confirm: '等待确认',
+        execute: '正在执行',
+        refresh: '正在刷新清单',
+        success: '操作完成',
+        error: '操作失败'
+      },
+      steps: { confirm: '确认', execute: '执行', refresh: '刷新' }
+    },
     nav: '技能管理',
     open: '打开技能管理',
     views: { hermes: 'Hermes 技能', codex: 'Codex 技能' },
@@ -206,6 +232,15 @@ const requiresConfirmation = (row, action) => CONFIRMED_ACTIONS.has(action)
   || (action === 'sync-codex' && row.codexInstalled)
 const actionLabel = (_row, action, t) => t(`actions.${action}`)
 const hasValue = value => value !== undefined && value !== null && value !== '' && value !== '-'
+const OPERATION_STEPS = ['confirm', 'execute', 'refresh']
+const operationIsRunning = activity => ['confirm', 'execute', 'refresh'].includes(activity?.phase)
+const operationIsTerminal = activity => ['success', 'error'].includes(activity?.phase)
+const operationMatches = (activity, row) => Boolean(
+  activity?.row
+  && activity.row.name === row.name
+  && (activity.row.relativePath || '') === (row.relativePath || '')
+  && sourceOf(activity.row) === sourceOf(row)
+)
 
 function useDialogA11y(open, onClose, closable = true) {
   const ref = useRef(null)
@@ -349,50 +384,79 @@ function useInventoryView(data, filters, showMissingBuiltin, t) {
   }
 }
 
-function useSkillMutation(t, onComplete, onConflict) {
+function useSkillMutation(t, onComplete, onConflict, onActivity) {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: ({ action, row, confirm }) => pluginContext.rest(`/${action}`, {
       method: 'POST',
       body: mutationBody(action, row, confirm)
     }),
-    onSuccess: (_data, variables) => {
+    onMutate: variables => {
+      onActivity({ action: variables.action, row: variables.row, phase: 'execute' })
+    },
+    onSuccess: async (_data, variables) => {
+      onActivity({ action: variables.action, row: variables.row, phase: 'refresh' })
+      await queryClient.invalidateQueries({ queryKey: QUERY_KEY }).catch(() => {})
+      onComplete()
+      onActivity({ action: variables.action, row: variables.row, phase: 'success' })
       host.notify({
         kind: 'success',
         message: t('success', t(`actions.${variables.action}`), variables.row.name)
       })
-      onComplete()
-      queryClient.invalidateQueries({ queryKey: QUERY_KEY })
     },
     onError: (error, variables) => {
       const payload = errorPayload(error)
       if (variables.action === 'sync-codex' && !variables.confirm && payload.status === 409) {
+        onActivity({ action: variables.action, row: variables.row, phase: 'confirm' })
         onConflict(variables)
         return
       }
-      host.notify({ kind: 'error', message: errorMessage(error, t('unknownError'), t) })
+      const message = errorMessage(error, t('unknownError'), t)
+      onActivity({
+        action: variables.action,
+        row: variables.row,
+        phase: 'error',
+        failedPhase: 'execute',
+        message
+      })
+      host.notify({ kind: 'error', message })
     }
   })
 }
 
-function usePluginUpdate(t, onComplete) {
+function usePluginUpdate(t, onComplete, onActivity) {
   const queryClient = useQueryClient()
+  const row = { name: ID, kind: 'plugin' }
   return useMutation({
     mutationFn: () => pluginContext.rest('/plugin-update', {
       method: 'POST',
       body: { confirm: ID },
       timeoutMs: 70000
     }),
-    onSuccess: data => {
+    onMutate: () => {
+      onActivity({ action: 'plugin-update', row, phase: 'execute' })
+    },
+    onSuccess: async data => {
+      const message = t(data.unchanged ? 'pluginUpToDate' : 'pluginUpdateSuccess')
+      onActivity({ action: 'plugin-update', row, phase: 'refresh' })
+      await queryClient.invalidateQueries({ queryKey: QUERY_KEY }).catch(() => {})
+      onComplete()
+      onActivity({ action: 'plugin-update', row, phase: 'success', message })
       host.notify({
         kind: 'success',
-        message: t(data.unchanged ? 'pluginUpToDate' : 'pluginUpdateSuccess')
+        message
       })
-      onComplete()
-      queryClient.invalidateQueries({ queryKey: QUERY_KEY })
     },
     onError: error => {
-      host.notify({ kind: 'error', message: errorMessage(error, t('unknownError'), t) })
+      const message = errorMessage(error, t('unknownError'), t)
+      onActivity({
+        action: 'plugin-update',
+        row,
+        phase: 'error',
+        failedPhase: 'execute',
+        message
+      })
+      host.notify({ kind: 'error', message })
     }
   })
 }
@@ -414,19 +478,126 @@ function Stat({ label, value }) {
   })
 }
 
-function ActionButtons({ busy, onAction, row, t }) {
+function operationStepTone(activity, index, activeIndex) {
+  if (activity.phase === 'success') return 'good'
+  if (activity.phase === 'error' && index === activeIndex) return 'bad'
+  if (index < activeIndex) return 'good'
+  if (index === activeIndex) return 'warn'
+  return 'muted'
+}
+
+function OperationSteps({ activity, t }) {
+  const activePhase = activity.phase === 'error'
+    ? activity.failedPhase || 'execute'
+    : activity.phase
+  const activeIndex = activity.phase === 'success'
+    ? OPERATION_STEPS.length
+    : Math.max(0, OPERATION_STEPS.indexOf(activePhase))
+  const value = activity.phase === 'success'
+    ? 100
+    : Math.round(((activeIndex + 0.5) / OPERATION_STEPS.length) * 100)
+  return jsxs('div', { className: 'space-y-2', children: [
+    jsx('div', {
+      'aria-label': t('operation.phases.' + activity.phase),
+      'aria-valuemax': 100,
+      'aria-valuemin': 0,
+      'aria-valuenow': value,
+      'aria-valuetext': t('operation.phases.' + activity.phase),
+      className: 'h-1.5 overflow-hidden rounded-full bg-(--ui-bg-secondary)',
+      role: 'progressbar',
+      children: jsx('div', {
+        className: cn(
+          'h-full rounded-full transition-[width] duration-300',
+          activity.phase === 'error' ? 'bg-destructive' : 'bg-(--ui-accent)',
+          operationIsRunning(activity) && 'animate-pulse'
+        ),
+        style: { width: `${value}%` }
+      })
+    }),
+    jsx('ol', {
+      className: 'grid grid-cols-3 gap-2',
+      children: OPERATION_STEPS.map((step, index) => jsxs('li', {
+        className: 'flex min-w-0 items-center gap-1.5 text-xs text-(--ui-text-secondary)',
+        children: [
+          jsx(StatusDot, { tone: operationStepTone(activity, index, activeIndex) }),
+          jsx('span', { className: 'truncate', children: t(`operation.steps.${step}`) })
+        ]
+      }, step))
+    })
+  ] })
+}
+
+function OperationProgress({ activity, onDismiss, t }) {
+  if (!activity) return null
+  const running = operationIsRunning(activity)
+  return jsxs('section', {
+    'aria-atomic': true,
+    'aria-live': 'polite',
+    className: 'space-y-3 rounded-md border border-(--ui-stroke-primary) p-3',
+    children: [
+      jsxs('div', { className: 'flex items-start justify-between gap-3', children: [
+        jsxs('div', { className: 'flex min-w-0 items-start gap-2', children: [
+          running
+            ? jsx(GlyphSpinner, {})
+            : jsx(StatusDot, { tone: activity.phase === 'success' ? 'good' : 'bad', className: 'mt-1.5' }),
+          jsxs('div', { className: 'min-w-0', children: [
+            jsx('div', { className: 'text-xs font-medium text-(--ui-text-tertiary)', children: t('operation.title') }),
+            jsx('div', {
+              className: 'truncate text-sm font-medium',
+              children: t('operation.subject', t(`actions.${activity.action}`), activity.row.name)
+            }),
+            jsx('div', {
+              className: 'mt-0.5 text-xs text-(--ui-text-secondary)',
+              children: t(`operation.phases.${activity.phase}`)
+            })
+          ] })
+        ] }),
+        operationIsTerminal(activity) ? jsx(Button, {
+          'aria-label': t('operation.dismiss'),
+          size: 'icon',
+          title: t('operation.dismiss'),
+          variant: 'ghost',
+          onClick: onDismiss,
+          children: jsx(Codicon, { name: 'close' })
+        }) : null
+      ] }),
+      jsx(OperationSteps, { activity, t }),
+      activity.message ? jsx('p', {
+        className: 'break-words text-xs text-(--ui-text-secondary)',
+        children: activity.message
+      }) : null
+    ]
+  })
+}
+
+function InlineOperation({ activity, row, t }) {
+  if (!operationIsRunning(activity) || !operationMatches(activity, row)) return null
+  return jsxs('div', {
+    'aria-live': 'polite',
+    className: 'flex items-center justify-end gap-1.5 text-xs text-(--ui-text-secondary)',
+    children: [
+      jsx(GlyphSpinner, {}),
+      jsx('span', { children: t(`operation.phases.${activity.phase}`) })
+    ]
+  })
+}
+
+function ActionButtons({ activity, busy, onAction, row, t }) {
   const actions = actionsOf(row)
   if (!actions.length) return null
-  return jsx('div', {
-    className: 'flex flex-wrap items-center gap-2 md:justify-end',
-    children: actions.map(action => jsx(Button, {
-      disabled: busy,
-      size: 'sm',
-      variant: actionVariant(action),
-      onClick: () => onAction(row, action),
-      children: actionLabel(row, action, t)
-    }, action))
-  })
+  return jsxs('div', { className: 'space-y-1.5', children: [
+    jsx(InlineOperation, { activity, row, t }),
+    jsx('div', {
+      className: 'flex flex-wrap items-center gap-2 md:justify-end',
+      children: actions.map(action => jsx(Button, {
+        disabled: busy,
+        size: 'sm',
+        variant: actionVariant(action),
+        onClick: () => onAction(row, action),
+        children: actionLabel(row, action, t)
+      }, action))
+    })
+  ] })
 }
 
 function SourceCell({ row, t }) {
@@ -494,7 +665,7 @@ function DetailGroup({ fields, label, t }) {
   ] })
 }
 
-function DetailDrawer({ busy, language, onAction, onClose, row, t }) {
+function DetailDrawer({ activity, busy, language, onAction, onClose, row, t }) {
   const dialogRef = useDialogA11y(Boolean(row), onClose)
   if (!row) return null
   const overviewFields = [
@@ -551,14 +722,14 @@ function DetailDrawer({ busy, language, onAction, onClose, row, t }) {
         }),
         actionsOf(row).length ? jsx('footer', {
           className: 'border-t border-(--ui-stroke-secondary) p-4',
-          children: jsx(ActionButtons, { busy, onAction, row, t })
+          children: jsx(ActionButtons, { activity, busy, onAction, row, t })
         }) : null
       ]
     })
   })
 }
 
-function ConfirmOverlay({ busy, onCancel, onConfirm, pending, t }) {
+function ConfirmOverlay({ activity, busy, onCancel, onConfirm, pending, t }) {
   const [value, setValue] = useState('')
   const dialogRef = useDialogA11y(Boolean(pending), onCancel, !busy)
   if (!pending) return null
@@ -610,13 +781,20 @@ function ConfirmOverlay({ busy, onCancel, onConfirm, pending, t }) {
             ] })
           })
         ] }),
+        activity ? jsx('div', {
+          className: 'mt-4',
+          children: jsx(OperationSteps, { activity, t })
+        }) : null,
         jsxs('footer', { className: 'mt-4 flex justify-end gap-2', children: [
           jsx(Button, { disabled: busy, variant: 'ghost', onClick: onCancel, children: t('cancel') }),
           jsx(Button, {
+            'aria-busy': busy,
             disabled: !valid,
             variant: actionVariant(pending.action),
             onClick: () => onConfirm(value),
-            children: busy ? t('working') : t('confirm')
+            children: busy
+              ? jsxs(Fragment, { children: [jsx(GlyphSpinner, {}), ` ${t('working')}`] })
+              : t('confirm')
           })
         ] })
       ]
@@ -624,7 +802,7 @@ function ConfirmOverlay({ busy, onCancel, onConfirm, pending, t }) {
   })
 }
 
-function PluginUpdateOverlay({ busy, onCancel, onConfirm, open, t }) {
+function PluginUpdateOverlay({ activity, busy, onCancel, onConfirm, open, t }) {
   const dialogRef = useDialogA11y(open, onCancel, !busy)
   if (!open) return null
   return jsx('div', {
@@ -647,12 +825,19 @@ function PluginUpdateOverlay({ busy, onCancel, onConfirm, open, t }) {
           className: 'mt-2 text-sm leading-6 text-(--ui-text-secondary)',
           children: t('pluginUpdateBody')
         }),
+        activity ? jsx('div', {
+          className: 'mt-4',
+          children: jsx(OperationSteps, { activity, t })
+        }) : null,
         jsxs('footer', { className: 'mt-4 flex justify-end gap-2', children: [
           jsx(Button, { disabled: busy, variant: 'ghost', onClick: onCancel, children: t('cancel') }),
           jsx(Button, {
+            'aria-busy': busy,
             disabled: busy,
             onClick: onConfirm,
-            children: busy ? t('working') : t('pluginUpdateConfirm')
+            children: busy
+              ? jsxs(Fragment, { children: [jsx(GlyphSpinner, {}), ` ${t('working')}`] })
+              : t('pluginUpdateConfirm')
           })
         ] })
       ]
@@ -700,7 +885,7 @@ function History({ history, t }) {
   })
 }
 
-function CodexTable({ busy, onAction, rows, t }) {
+function CodexTable({ activity, busy, onAction, rows, t }) {
   if (!rows.length) return jsx(EmptyState, {
     title: t('codexList.empty'),
     description: t('emptyBody')
@@ -755,13 +940,16 @@ function CodexTable({ busy, onAction, rows, t }) {
               }),
               jsx('td', {
                 className: 'sticky right-0 z-[1] bg-background px-2 py-1.5 text-right align-middle group-hover:bg-(--ui-bg-secondary)',
-                children: jsx(Button, {
-                  disabled: busy,
-                  size: 'sm',
-                  variant: 'destructive',
-                  onClick: () => onAction(row, 'delete-codex'),
-                  children: t('actions.delete-codex')
-                })
+                children: jsxs('div', { className: 'space-y-1.5', children: [
+                  jsx(InlineOperation, { activity, row, t }),
+                  jsx(Button, {
+                    disabled: busy,
+                    size: 'sm',
+                    variant: 'destructive',
+                    onClick: () => onAction(row, 'delete-codex'),
+                    children: t('actions.delete-codex')
+                  })
+                ] })
               })
             ]
           }, row.relativePath))
@@ -771,7 +959,7 @@ function CodexTable({ busy, onAction, rows, t }) {
   })
 }
 
-function PageHeader({ fetching, onRefresh, onUpdate, summary, t, updating }) {
+function PageHeader({ fetching, onRefresh, onUpdate, operating, summary, t, updating }) {
   return jsxs('header', {
     className: 'border-b border-(--ui-stroke-secondary) px-4 py-4',
     children: [
@@ -782,7 +970,7 @@ function PageHeader({ fetching, onRefresh, onUpdate, summary, t, updating }) {
         ] }),
         jsxs('div', { className: 'flex flex-wrap gap-2', children: [
           jsx(Button, {
-            disabled: updating,
+            disabled: updating || operating,
             size: 'sm',
             variant: 'secondary',
             onClick: onUpdate,
@@ -897,7 +1085,7 @@ function FilterPanel({
   })
 }
 
-function SkillTable({ busy, language, onAction, onSelect, rows, t }) {
+function SkillTable({ activity, busy, language, onAction, onSelect, rows, t }) {
   if (!rows.length) return jsx(EmptyState, { title: t('emptyTitle'), description: t('emptyBody') })
   return jsx('div', {
     className: 'overflow-x-auto rounded-sm border border-(--ui-stroke-secondary)',
@@ -948,7 +1136,7 @@ function SkillTable({ busy, language, onAction, onSelect, rows, t }) {
               }),
               jsx('td', {
                 className: 'sticky right-0 z-[1] bg-background px-2 py-1.5 align-middle group-hover:bg-(--ui-bg-secondary)',
-                children: jsx(ActionButtons, { busy, onAction, row, t })
+                children: jsx(ActionButtons, { activity, busy, onAction, row, t })
               })
             ]
           }, `${sourceOf(row)}:${row.name}`))
@@ -966,6 +1154,7 @@ function SkillManagePage() {
   })
   const [selected, setSelected] = useState(null)
   const [pending, setPending] = useState(null)
+  const [activity, setActivity] = useState(null)
   const [pluginUpdateOpen, setPluginUpdateOpen] = useState(false)
   const inventory = useQuery({
     queryKey: QUERY_KEY,
@@ -977,9 +1166,10 @@ function SkillManagePage() {
   const mutation = useSkillMutation(
     t,
     () => { setPending(null); setSelected(null) },
-    variables => setPending({ row: variables.row, action: variables.action })
+    variables => setPending({ row: variables.row, action: variables.action }),
+    setActivity
   )
-  const pluginUpdate = usePluginUpdate(t, () => setPluginUpdateOpen(false))
+  const pluginUpdate = usePluginUpdate(t, () => setPluginUpdateOpen(false), setActivity)
   const data = inventory.data || {}
   const language = t('language') === 'zh' ? 'zh' : 'en'
   const view = useInventoryView(data, { ...filters, language }, filters.showMissingBuiltin, t)
@@ -992,13 +1182,31 @@ function SkillManagePage() {
   }
   const visibleCount = showingCodex ? view.codexVisible.length : view.visible.length
   const totalCount = showingCodex ? view.codex.length : view.rows.length
+  const busy = mutation.isPending || pluginUpdate.isPending
   const changeFilter = (key, value) => setFilters(current => ({ ...current, [key]: value }))
   const clearFilters = () => setFilters(current => ({
     ...current, query: '', source: 'all', category: 'all', showMissingBuiltin: false
   }))
-  const beginAction = (row, action) => requiresConfirmation(row, action)
-    ? setPending({ row, action })
-    : mutation.mutate({ row, action, confirm: '' })
+  const beginAction = (row, action) => {
+    if (requiresConfirmation(row, action)) {
+      setActivity({ action, row, phase: 'confirm' })
+      setPending({ row, action })
+      return
+    }
+    mutation.mutate({ row, action, confirm: '' })
+  }
+  const cancelPending = () => {
+    setPending(null)
+    if (activity?.phase === 'confirm') setActivity(null)
+  }
+  const openPluginUpdate = () => {
+    setActivity({ action: 'plugin-update', row: { name: ID, kind: 'plugin' }, phase: 'confirm' })
+    setPluginUpdateOpen(true)
+  }
+  const cancelPluginUpdate = () => {
+    setPluginUpdateOpen(false)
+    if (activity?.action === 'plugin-update' && activity.phase === 'confirm') setActivity(null)
+  }
 
   if (inventory.isPending) {
     return jsx('div', { className: 'grid h-full place-items-center', children: jsx(GlyphSpinner, {}) })
@@ -1023,7 +1231,8 @@ function SkillManagePage() {
       jsx(PageHeader, {
         fetching: inventory.isFetching,
         onRefresh: () => inventory.refetch(),
-        onUpdate: () => setPluginUpdateOpen(true),
+        onUpdate: openPluginUpdate,
+        operating: mutation.isPending,
         summary,
         t,
         updating: pluginUpdate.isPending
@@ -1031,6 +1240,11 @@ function SkillManagePage() {
       jsx(ScrollArea, {
         className: 'min-h-0 flex-1',
         children: jsxs('main', { className: 'mx-auto w-full max-w-7xl space-y-4 p-4', children: [
+          jsx(OperationProgress, {
+            activity,
+            onDismiss: () => setActivity(null),
+            t
+          }),
           jsx(Diagnostics, { rows: diagnostics, t }),
           jsx(PathLine, {
             path: showingCodex ? data.meta?.codexSkillsDir : data.meta?.skillsDir,
@@ -1053,13 +1267,15 @@ function SkillManagePage() {
           }),
           showingCodex
             ? jsx(CodexTable, {
-                busy: mutation.isPending,
+                activity,
+                busy,
                 onAction: beginAction,
                 rows: view.codexVisible,
                 t
               })
             : jsx(SkillTable, {
-                busy: mutation.isPending,
+                activity,
+                busy,
                 language,
                 onAction: beginAction,
                 onSelect: setSelected,
@@ -1071,7 +1287,8 @@ function SkillManagePage() {
       })
     ] }),
     jsx(DetailDrawer, {
-      busy: mutation.isPending,
+      activity,
+      busy,
       language,
       row: selected,
       t,
@@ -1080,17 +1297,19 @@ function SkillManagePage() {
     }),
     jsx(ConfirmOverlay, {
       key: pending ? `${pending.action}:${pending.row.name}` : 'none',
+      activity,
       busy: mutation.isPending,
       pending,
       t,
-      onCancel: () => setPending(null),
+      onCancel: cancelPending,
       onConfirm: confirm => mutation.mutate({ ...pending, confirm })
     }),
     jsx(PluginUpdateOverlay, {
+      activity,
       busy: pluginUpdate.isPending,
       open: pluginUpdateOpen,
       t,
-      onCancel: () => setPluginUpdateOpen(false),
+      onCancel: cancelPluginUpdate,
       onConfirm: () => pluginUpdate.mutate()
     })
   ] })

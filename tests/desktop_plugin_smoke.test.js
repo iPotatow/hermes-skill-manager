@@ -32,7 +32,7 @@ test('plugin update has a dedicated endpoint and an explicit second confirmation
   assert.match(source, /function PluginUpdateOverlay/)
   assert.match(source, /pluginContext\.rest\('\/plugin-update'/)
   assert.match(source, /body:\s*\{ confirm: ID \}/)
-  assert.match(source, /onUpdate:\s*\(\) => setPluginUpdateOpen\(true\)/)
+  assert.match(source, /onUpdate: openPluginUpdate/)
   assert.match(source, /onConfirm:\s*\(\) => pluginUpdate\.mutate\(\)/)
   assert.match(source, /pluginUpdateTitle: '更新技能管理插件？'/)
 })
@@ -95,6 +95,24 @@ test('row actions are rendered as direct buttons without dropdown menus', () => 
   assert.match(source, /onClick: \(\) => onAction\(row, 'delete-codex'\)/)
   assert.match(source, /variant: 'destructive'/)
   assert.doesNotMatch(source, /ActionMenu|DropdownMenu|moreActions|resync/)
+})
+
+test('operations expose honest visual stages from confirmation through refresh', () => {
+  assert.match(source, /const OPERATION_STEPS = \['confirm', 'execute', 'refresh'\]/)
+  assert.match(source, /function OperationProgress/)
+  assert.match(source, /function OperationSteps/)
+  assert.match(source, /function InlineOperation/)
+  assert.match(source, /role: 'progressbar'/)
+  assert.match(source, /'aria-live': 'polite'/)
+  assert.match(source, /jsx\(StatusDot/)
+  assert.match(source, /jsx\(GlyphSpinner/)
+  assert.match(source, /onMutate: variables =>/)
+  assert.match(source, /phase: 'execute'/)
+  assert.match(source, /phase: 'refresh'/)
+  assert.match(source, /phase: 'success'/)
+  assert.match(source, /phase: 'error'/)
+  assert.match(source, /await queryClient\.invalidateQueries/)
+  assert.doesNotMatch(source, /setInterval|fakeProgress|progressPercent/)
 })
 
 test('table headers and cells are vertically centered', () => {

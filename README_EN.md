@@ -21,6 +21,7 @@ English | [简体中文](README.md)
 - The Hermes table shows Skill, Category, Source, and Actions without Codex status; source kind and repository share one cell, while descriptions stay on one line below skill names
 - The Codex view marks every user skill as either synced from Hermes or Codex-only, and synced rows include their Hermes source
 - Every row action is a direct button with no dropdown menu; table content is vertically centered while headers and edge columns remain sticky
+- Operations show a three-stage Confirm, Apply, and Refresh progress track, mirror the active phase in the affected row, and retain success or failure results
 - The header summarizes disabled, restorable, and diagnostic counts; restorable built-ins can be added to the inventory on demand
 - The Codex view hides `.system` skills and provides a direct delete action for user skills
 - Details are grouped into overview and location sections, with copyable paths, Escape-to-close, focus trapping, and focus restoration
@@ -95,4 +96,4 @@ node --test tests/desktop_plugin_smoke.test.js
 python3 -m unittest discover -s tests -v
 ```
 
-Plugin ID: `skill-manager` · Desktop route: `/skill-manager` · Version: `1.6.2`
+Plugin ID: `skill-manager` · Desktop route: `/skill-manager` · Version: `1.7.0`

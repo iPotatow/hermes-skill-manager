@@ -21,6 +21,7 @@
 - Hermes 主表按“技能、分类、来源、操作”展示，不再显示 Codex 状态；来源类型与具体仓库合并显示，简介位于技能名下方并限制为一行
 - Codex 视图标明每个用户技能是“同步于 Hermes”还是“仅 Codex”，同步项同时显示对应 Hermes 来源
 - 所有行操作直接显示为按钮，不使用下拉菜单；表格内容垂直居中，首尾列与表头支持粘滞定位
+- 操作过程以“确认、执行、刷新”三阶段进度条展示，当前技能行同步显示进行中状态，并保留成功或失败结果
 - 顶部汇总已停用、可恢复和诊断数量；“可恢复的内建技能”可按需加入清单
 - Codex 视图不显示 `.system` 系统技能，并可直接删除用户技能
 - 详情按基本信息、来源与路径分组，支持复制路径、`Esc` 关闭、焦点锁定与返回
@@ -95,4 +96,4 @@ node --test tests/desktop_plugin_smoke.test.js
 python3 -m unittest discover -s tests -v
 ```
 
-插件 ID：`skill-manager` · Desktop 路径：`/skill-manager` · 版本：`1.6.2`
+插件 ID：`skill-manager` · Desktop 路径：`/skill-manager` · 版本：`1.7.0`
