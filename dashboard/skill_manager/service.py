@@ -68,6 +68,7 @@ class SkillManager:
         rows = self.inventory_reader.rows(diagnostics, {item[0] for item in bundled})
         missing = self.inventory_reader.missing_builtin_rows(rows, bundled)
         codex_rows = self.inventory_reader.codex_inventory(diagnostics)
+        optional_rows = self.inventory_reader.optional_inventory(diagnostics)
         state = self.state.load()
 
         counts: dict[str, int] = {}
@@ -96,6 +97,9 @@ class SkillManager:
             "history": state.get("history", [])[:5],
             "codexSkills": codex_rows,
             "codexSkillCount": len(codex_rows),
+            "optionalSkills": optional_rows,
+            "optionalSkillCount": len(optional_rows),
+            "optionalInstalledCount": sum(bool(row["installed"]) for row in optional_rows),
             "diagnostics": diagnostics,
             "meta": {
                 "home": str(self.paths.home),
@@ -168,6 +172,17 @@ class SkillManager:
         row = self.inventory_reader.find("hub-installed", name)
         self._run_external(lambda: self.runtime.update_hub(row["name"]))
         self._complete_mutation("update", row)
+        return {"ok": True, "skill": row}
+
+    def install_optional(self, identifier: str) -> dict[str, Any]:
+        row = self.inventory_reader.find_optional(identifier)
+        if row.get("installed"):
+            raise SkillManagerError(409, "该 Optional 技能已经安装")
+        self._run_external(lambda: self.runtime.install_optional(
+            row["identifier"],
+            row.get("category", ""),
+        ))
+        self._complete_mutation("install-optional", row)
         return {"ok": True, "skill": row}
 
     def update_plugin(self, confirm: str) -> dict[str, Any]:

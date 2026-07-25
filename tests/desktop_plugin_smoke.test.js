@@ -47,13 +47,15 @@ test('desktop action policy preserves every backend operation and confirmation b
   assert.match(source, /payload\.status === 409/)
 })
 
-test('community updates use a network-tolerant request timeout', () => {
-  assert.match(source, /const COMMUNITY_UPDATE_TIMEOUT_MS = 300000/)
-  assert.match(source, /timeoutMs: action === 'update' \? COMMUNITY_UPDATE_TIMEOUT_MS : undefined/)
+test('Hub mutations use a network-tolerant request timeout', () => {
+  assert.match(source, /const HUB_MUTATION_TIMEOUT_MS = 300000/)
+  assert.match(source, /\['update', 'install-optional'\]\.includes\(action\)/)
+  assert.match(source, /\? HUB_MUTATION_TIMEOUT_MS/)
 })
 
-test('desktop renders Hermes and Codex user skills as tables without skill cards', () => {
+test('desktop renders Hermes, Optional, and Codex skills as tables without skill cards', () => {
   assert.match(source, /function SkillTable/)
+  assert.match(source, /function OptionalTable/)
   assert.match(source, /function CodexTable/)
   assert.match(source, /jsxs\('table'/)
   assert.match(source, /onClick: \(\) => onAction\(row, 'delete-codex'\)/)
@@ -144,13 +146,16 @@ test('desktop copy is bilingual and includes backend-mount guidance', () => {
   assert.doesNotMatch(source, /document\.documentElement\.lang|navigator\.language/)
 })
 
-test('Hermes and Codex are separate inventory views with correct result totals', () => {
-  assert.match(source, /const VIEWS = \['hermes', 'codex'\]/)
+test('Hermes, Optional, and Codex are separate inventory views with correct totals', () => {
+  assert.match(source, /const VIEWS = \['hermes', 'optional', 'codex'\]/)
   assert.match(source, /const SOURCES = \['all', 'builtin', 'hub-installed', 'local'\]/)
   assert.match(source, /jsx\(SegmentedControl/)
   assert.match(source, /const showingCodex = filters\.view === 'codex'/)
-  assert.match(source, /const totalCount = showingCodex \? view\.codex\.length : view\.rows\.length/)
+  assert.match(source, /const showingOptional = filters\.view === 'optional'/)
+  assert.match(source, /showingOptional \? view\.optional\.length : view\.rows\.length/)
   assert.match(source, /showingCodex\s*\? jsx\(CodexTable/)
+  assert.match(source, /showingOptional\s*\? jsx\(OptionalTable/)
+  assert.match(source, /onClick: \(\) => onAction\(row, 'install-optional'\)/)
   assert.match(source, /showMissingBuiltin: '显示可恢复的内建技能'/)
   assert.doesNotMatch(source, /showDeleted/)
 })

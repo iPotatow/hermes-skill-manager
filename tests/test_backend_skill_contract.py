@@ -85,6 +85,9 @@ class RuntimeStub:
     def update_hub(self, name):
         self.calls.append(("update", name))
 
+    def install_optional(self, identifier, category):
+        self.calls.append(("install-optional", identifier, category))
+
     def update_plugin(self, name, plugin_root, desktop_entry):
         self.calls.append(("plugin-update", name, plugin_root, desktop_entry))
         return {"ok": True, "unchanged": False, "desktopPath": str(desktop_entry)}
@@ -99,6 +102,7 @@ class InventoryStub:
         self.source_path = source_path
         self.target_path = target_path
         self.missing = {}
+        self.optional = {}
 
     def find(self, source, name):
         try:
@@ -111,6 +115,12 @@ class InventoryStub:
             return self.missing[name]
         except KeyError as exc:
             raise SkillManagerError(404, f"missing builtin:{name}") from exc
+
+    def find_optional(self, identifier):
+        try:
+            return self.optional[identifier]
+        except KeyError as exc:
+            raise SkillManagerError(404, f"missing optional:{identifier}") from exc
 
     def safe_target(self, _relative_path):
         return self.source_path
@@ -516,6 +526,38 @@ class BackendSkillContractTest(unittest.TestCase):
         self.assertEqual(prompt_calls, [{"clear_snapshot": True}])
         self.assertEqual(skills_tool._SKILLS_CACHE, {})
 
+    def test_optional_runtime_requires_a_matching_hub_lock_after_install(self):
+        calls = []
+        cli_module = types.ModuleType("hermes_cli.skills_hub")
+        cli_module.do_install = lambda identifier, **kwargs: calls.append((identifier, kwargs))
+        hub_module = types.ModuleType("tools.skills_hub")
+        hub_module.HubLockFile = lambda: types.SimpleNamespace(list_installed=lambda: [])
+        with patch.dict(sys.modules, {
+            "hermes_cli.skills_hub": cli_module,
+            "tools.skills_hub": hub_module,
+        }):
+            with self.assertRaises(SkillManagerError):
+                HermesRuntime.install_optional("official/tools/demo", "tools")
+
+        hub_module.HubLockFile = lambda: types.SimpleNamespace(list_installed=lambda: [
+            {"identifier": "official/tools/demo"}
+        ])
+        with patch.dict(sys.modules, {
+            "hermes_cli.skills_hub": cli_module,
+            "tools.skills_hub": hub_module,
+        }):
+            HermesRuntime.install_optional("official/tools/demo", "tools")
+
+        self.assertEqual(calls[-1], (
+            "official/tools/demo",
+            {
+                "category": "tools",
+                "force": False,
+                "console": None,
+                "skip_confirm": True,
+            },
+        ))
+
     def test_all_hermes_content_mutations_clear_cache_and_record(self):
         with tempfile.TemporaryDirectory() as directory:
             local_path = Path(directory) / "local"
@@ -529,6 +571,14 @@ class BackendSkillContractTest(unittest.TestCase):
             inventory.missing["missing"] = {
                 "name": "missing", "kind": "builtin", "source": "builtin", "installPath": "missing"
             }
+            inventory.optional["official/tools/optional-demo"] = {
+                "name": "optional-demo",
+                "kind": "optional",
+                "source": "official",
+                "identifier": "official/tools/optional-demo",
+                "category": "tools",
+                "installed": False,
+            }
             state = StateStub()
             runtime = RuntimeStub()
             manager = SkillManager(inventory=inventory, state=state, runtime=runtime)
@@ -538,12 +588,46 @@ class BackendSkillContractTest(unittest.TestCase):
             manager.reset("hub-installed", "hub", "hub")
             manager.restore("missing")
             manager.update("hub")
+            manager.install_optional("official/tools/optional-demo")
 
-            self.assertEqual(runtime.clear_count, 5)
+            self.assertEqual(runtime.clear_count, 6)
             self.assertEqual([event["action"] for event in state.events], [
-                "delete", "reset", "reset", "restore", "update"
+                "delete", "reset", "reset", "restore", "update", "install-optional"
             ])
             self.assertIn(("reset-hub", "owner/repo", "tools"), runtime.calls)
+            self.assertIn((
+                "install-optional", "official/tools/optional-demo", "tools"
+            ), runtime.calls)
+
+    def test_optional_catalog_reports_install_state_from_official_identifier(self):
+        source = types.SimpleNamespace(search=lambda _query, limit: [
+            types.SimpleNamespace(
+                name="demo",
+                description="Optional demo",
+                identifier="official/productivity/demo",
+                path="optional-skills/productivity/demo",
+            )
+        ])
+        skills_hub = types.ModuleType("tools.skills_hub")
+        skills_hub.OptionalSkillSource = lambda: source
+        tools_package = types.ModuleType("tools")
+        tools_package.skills_hub = skills_hub
+        inventory = SkillInventory(SkillPaths())
+
+        with patch.dict(sys.modules, {
+            "tools": tools_package,
+            "tools.skills_hub": skills_hub,
+        }):
+            available = inventory.optional_inventory([], {})
+            installed = inventory.optional_inventory([], {
+                "demo": {"identifier": "official/productivity/demo"}
+            })
+
+        self.assertEqual(available[0]["category"], "productivity")
+        self.assertEqual(available[0]["availableActions"], ["install-optional"])
+        self.assertFalse(available[0]["installed"])
+        self.assertTrue(installed[0]["installed"])
+        self.assertEqual(installed[0]["availableActions"], [])
 
     def test_plugin_update_requires_confirmation_syncs_entry_and_records_history(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -586,6 +670,12 @@ class BackendSkillContractTest(unittest.TestCase):
                 diagnostics.append({"component": "codex-skill", "message": "partial"})
                 return [{"name": "codex"}]
 
+            def optional_inventory(self, diagnostics):
+                return [
+                    {"name": "one", "installed": True},
+                    {"name": "two", "installed": False},
+                ]
+
         paths = SkillPaths(
             home_override=Path("/hermes"),
             skills_override=Path("/hermes/skills"),
@@ -603,6 +693,8 @@ class BackendSkillContractTest(unittest.TestCase):
         self.assertEqual(result["disabledCount"], 1)
         self.assertEqual(result["missingBuiltinCount"], 1)
         self.assertEqual(result["codexSkillCount"], 1)
+        self.assertEqual(result["optionalSkillCount"], 2)
+        self.assertEqual(result["optionalInstalledCount"], 1)
         self.assertTrue(result["meta"]["partial"])
         self.assertEqual(result["meta"]["skillsDir"], "/hermes/skills")
 
@@ -610,7 +702,7 @@ class BackendSkillContractTest(unittest.TestCase):
         module = load_backend()
         expected_routes = {
             "/inventory", "/delete", "/reset", "/restore", "/update",
-            "/plugin-update", "/delete-codex", "/sync-codex",
+            "/install-optional", "/plugin-update", "/delete-codex", "/sync-codex",
         }
         if hasattr(module.router, "routes"):
             self.assertEqual({route.path for route in module.router.routes}, expected_routes)
@@ -637,6 +729,7 @@ class BackendSkillContractTest(unittest.TestCase):
             "reset_skill",
             "restore_builtin",
             "update_skill",
+            "install_optional_skill",
             "update_plugin",
             "delete_codex_skill",
             "sync_skill_to_codex",

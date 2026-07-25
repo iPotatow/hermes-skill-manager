@@ -62,6 +62,22 @@ class HermesRuntime:
         do_update(name=name, console=None)
 
     @staticmethod
+    def install_optional(identifier: str, category: str) -> None:
+        from hermes_cli.skills_hub import do_install
+        from tools.skills_hub import HubLockFile
+
+        do_install(
+            identifier,
+            category=category,
+            force=False,
+            console=None,
+            skip_confirm=True,
+        )
+        installed = HubLockFile().list_installed()
+        if not any(str(row.get("identifier", "")) == identifier for row in installed):
+            raise SkillManagerError(500, "Hermes 未完成 Optional 技能安装")
+
+    @staticmethod
     def update_plugin(name: str, plugin_root: Path, desktop_entry: Path) -> dict[str, Any]:
         """Update the checkout through Hermes, then hot-sync its Desktop entry."""
 

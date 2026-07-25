@@ -2,20 +2,23 @@
 
 English | [简体中文](README.md)
 
-`skill-manager` (Skill Manager / 技能管理) is a standalone native Hermes Desktop plugin for inspecting and maintaining built-in, Skills Hub, and local skills, and for managing Codex user skills. It contains no Dashboard page and does not depend on the Dashboard plugin repository.
+`skill-manager` (Skill Manager / 技能管理) is a standalone native Hermes Desktop plugin for inspecting and maintaining built-in, Skills Hub, local, and official Optional skills, and for managing Codex user skills. It contains no Dashboard page and does not depend on the Dashboard plugin repository.
+
+Version: `1.8.0`
 
 ## Features
 
 - Native Desktop sidebar page and `⌘K` command
 - The Dashboard manifest mounts backend APIs without adding a Dashboard sidebar item
-- Compact tables for Hermes and Codex skills, with no skill-card layout
-- Top-level Hermes/Codex segmented views, with source filters scoped to the Hermes inventory
+- Compact tables for Hermes, Optional, and Codex skills, with no skill-card layout
+- Top-level Hermes/Optional/Codex segmented views, with source filters scoped to the Hermes inventory
+- The Optional view reads Hermes' bundled official catalog and supports search, category filters, installed state, and direct installation
 - Responsive, wrapping search and filters with full-text search and one-click reset
 - Built-in Chinese descriptions come from the [official Hermes Chinese skills catalog](https://hermes-agent.nousresearch.com/docs/zh-Hans/reference/skills-catalog), follow the Desktop UI language, and use background refresh with an offline snapshot
 - Skill details, recent actions, diagnostics, and automatic refresh
 - A page-level plugin update button with an explicit second confirmation and automatic Desktop entry hot reload
 - Built-in reset/delete/restore; Hub reset/update/delete; local delete
-- Community updates use a dedicated long request timeout, while FastAPI runs blocking mutations in its thread pool so updates do not falsely report a backend connection timeout
+- Community updates and Optional installs use a dedicated long request timeout, while FastAPI runs blocking mutations in its thread pool so operations do not falsely report a backend connection timeout
 - Deleting a community skill also removes the displayed residual copy and invalidates discovery caches so it cannot reappear as a local skill
 - Exact-name confirmation for delete and reset, with a one-click name-fill button
 - Built-in, community, and local skills all show the “Sync” action and can be copied to `$CODEX_HOME/skills/<skill-name>`; replacement requires exact-name confirmation

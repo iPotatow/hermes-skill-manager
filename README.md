@@ -2,20 +2,23 @@
 
 [English](README_EN.md) | 简体中文
 
-`skill-manager`（Skill Manager / 技能管理）是独立的 Hermes Desktop 原生插件，用于查看和维护内建、Skills Hub 与本地技能，并可管理 Codex 用户技能。它不包含 Hermes Dashboard 页面，也不依赖 Dashboard 插件仓库。
+`skill-manager`（Skill Manager / 技能管理）是独立的 Hermes Desktop 原生插件，用于查看和维护内建、Skills Hub、本地与官方 Optional 技能，并可管理 Codex 用户技能。它不包含 Hermes Dashboard 页面，也不依赖 Dashboard 插件仓库。
+
+版本：`1.8.0`
 
 ## 功能
 
 - Desktop 侧边栏页面与 `⌘K` 命令入口
 - Dashboard 清单仅挂载后端 API，不注册 Dashboard 侧边栏
-- Hermes 与 Codex 技能均使用紧凑表格展示，不使用技能卡片
-- Hermes 与 Codex 使用一级分段视图，来源筛选只作用于 Hermes 清单
+- Hermes、Optional 与 Codex 技能均使用紧凑表格展示，不使用技能卡片
+- Hermes、Optional 与 Codex 使用一级分段视图，来源筛选只作用于 Hermes 清单
+- Optional 视图读取 Hermes 随包提供的官方目录，支持搜索、分类筛选、已安装状态与直接安装
 - 搜索、来源和分类筛选支持响应式换行、全文搜索和一键清除
 - 内建技能中文简介取自 [Hermes 官方中文技能目录](https://hermes-agent.nousresearch.com/docs/zh-Hans/reference/skills-catalog)，跟随 Desktop 界面语言显示，后台定时刷新并保留离线快照
 - 技能详情、最近操作、诊断与自动刷新
 - 页面顶部提供插件更新按钮，点击后需再次确认；更新成功会自动热加载 Desktop 入口
 - 内建技能重置、删除、恢复；Hub 技能重置、更新、删除；本地技能删除
-- 社区技能更新使用独立的长请求时限，阻塞型操作由 FastAPI 线程池执行，避免更新期间误报后端连接超时
+- 社区更新与 Optional 安装使用独立的长请求时限，阻塞型操作由 FastAPI 线程池执行，避免操作期间误报后端连接超时
 - 删除社区技能时同时清理界面当前发现的残留副本并刷新发现缓存，避免被重新识别为本地技能
 - 删除和重置要求输入完整技能名确认，确认框可一键填入名称
 - 内建、社区和本地技能均显示“同步”按钮，可一键同步到 `$CODEX_HOME/skills/<技能名>`；覆盖已有 Codex 技能时要求输入完整技能名确认
