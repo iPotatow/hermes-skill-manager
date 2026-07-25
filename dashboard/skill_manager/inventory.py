@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
@@ -64,6 +65,14 @@ class SkillInventory:
 
     def _load_catalog(self) -> dict[str, dict[str, str]]:
         return self.catalog.snapshot()
+
+    def _load_optional_catalog(self) -> dict[str, dict[str, str]]:
+        try:
+            document = json.loads(self.paths.optional_catalog.read_text(encoding="utf-8"))
+            skills = document.get("skills", {})
+            return skills if isinstance(skills, dict) else {}
+        except Exception:
+            return {}
 
     def _catalog_description(self, name: str, key: str, fallback: str = "") -> str:
         value = self._load_catalog().get(name, {}).get(key)
@@ -167,18 +176,26 @@ class SkillInventory:
                 str(entry.get("identifier", ""))
                 for entry in installed.values()
             }
+            translations = self._load_optional_catalog()
             rows: list[dict[str, Any]] = []
             for item in OptionalSkillSource().search("", limit=10000):
                 identifier = str(item.identifier)
+                description_en = str(item.description or "")
+                translated = translations.get(identifier, {})
+                description_zh = (
+                    str(translated.get("descriptionZh", ""))
+                    if isinstance(translated, dict)
+                    else ""
+                ) or description_en
                 relative = identifier.removeprefix("official/")
                 parts = Path(relative).parts
                 category = Path(*parts[:-1]).as_posix() if len(parts) > 1 else ""
                 is_installed = identifier in installed_identifiers
                 rows.append({
                     "name": str(item.name),
-                    "description": str(item.description or ""),
-                    "descriptionEn": str(item.description or ""),
-                    "descriptionZh": str(item.description or ""),
+                    "description": description_zh,
+                    "descriptionEn": description_en,
+                    "descriptionZh": description_zh,
                     "category": category,
                     "kind": "optional",
                     "source": "official",

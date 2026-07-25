@@ -143,6 +143,9 @@ test('desktop copy is bilingual and includes backend-mount guidance', () => {
   assert.match(source, /language: 'en'/)
   assert.match(source, /language: 'zh'/)
   assert.match(source, /const language = t\('language'\) === 'zh' \? 'zh' : 'en'/)
+  assert.match(source, /function OptionalTable\(\{ activity, busy, language, onAction, rows, t \}\)/)
+  assert.match(source, /title: descriptionOf\(row, language\) \|\| t\('noDescription'\)/)
+  assert.match(source, /row\.name, descriptionOf\(row, language\), row\.category/)
   assert.doesNotMatch(source, /document\.documentElement\.lang|navigator\.language/)
 })
 

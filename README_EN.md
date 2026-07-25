@@ -4,7 +4,7 @@ English | [简体中文](README.md)
 
 `skill-manager` (Skill Manager / 技能管理) is a standalone native Hermes Desktop plugin for inspecting and maintaining built-in, Skills Hub, local, and official Optional skills, and for managing Codex user skills. It contains no Dashboard page and does not depend on the Dashboard plugin repository.
 
-Version: `1.8.1`
+Version: `1.8.2`
 
 ## Features
 
@@ -12,7 +12,7 @@ Version: `1.8.1`
 - The Dashboard manifest mounts backend APIs without adding a Dashboard sidebar item
 - Compact tables for Hermes, Optional, and Codex skills, with no skill-card layout
 - Top-level Hermes/Codex segmented views; Optional sits beside Built-in, Community, and Local in the Hermes source filter
-- The Optional inventory reads Hermes' bundled official catalog and supports search, category filters, installed state, and direct installation
+- The Optional inventory reads Hermes' bundled official catalog and supports search, category filters, installed state, and direct installation; descriptions follow the Desktop language with a complete bundled Chinese snapshot
 - Responsive, wrapping search and filters with full-text search and one-click reset
 - Built-in Chinese descriptions come from the [official Hermes Chinese skills catalog](https://hermes-agent.nousresearch.com/docs/zh-Hans/reference/skills-catalog), follow the Desktop UI language, and use background refresh with an offline snapshot
 - Skill details, recent actions, diagnostics, and automatic refresh

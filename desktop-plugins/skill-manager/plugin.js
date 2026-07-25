@@ -372,12 +372,12 @@ function filterCodexRows(rows, query) {
 }
 
 function filterOptionalRows(rows, filters) {
-  const { category, query } = filters
+  const { category, language, query } = filters
   const needle = query.trim().toLowerCase()
   return rows.filter(row => {
     if (category !== 'all' && (row.category || '') !== category) return false
     return !needle || [
-      row.name, row.description, row.category, row.identifier, row.catalogPath
+      row.name, descriptionOf(row, language), row.category, row.identifier, row.catalogPath
     ].join('\n').toLowerCase().includes(needle)
   })
 }
@@ -1001,7 +1001,7 @@ function CodexTable({ activity, busy, onAction, rows, t }) {
   })
 }
 
-function OptionalTable({ activity, busy, onAction, rows, t }) {
+function OptionalTable({ activity, busy, language, onAction, rows, t }) {
   if (!rows.length) return jsx(EmptyState, {
     title: t('optionalList.empty'),
     description: t('emptyBody')
@@ -1038,8 +1038,8 @@ function OptionalTable({ activity, busy, onAction, rows, t }) {
                   jsx('div', { className: 'break-all font-medium', children: row.name }),
                   jsx('div', {
                     className: 'mt-0.5 truncate text-xs text-(--ui-text-secondary)',
-                    title: row.description || t('noDescription'),
-                    children: row.description || t('noDescription')
+                    title: descriptionOf(row, language) || t('noDescription'),
+                    children: descriptionOf(row, language) || t('noDescription')
                   })
                 ] })
               }),
@@ -1411,6 +1411,7 @@ function SkillManagePage() {
               ? jsx(OptionalTable, {
                   activity,
                   busy,
+                  language,
                   onAction: beginAction,
                   rows: view.optionalVisible,
                   t

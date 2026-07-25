@@ -613,6 +613,9 @@ class BackendSkillContractTest(unittest.TestCase):
         tools_package = types.ModuleType("tools")
         tools_package.skills_hub = skills_hub
         inventory = SkillInventory(SkillPaths())
+        inventory._load_optional_catalog = lambda: {
+            "official/productivity/demo": {"descriptionZh": "可选技能演示"}
+        }
 
         with patch.dict(sys.modules, {
             "tools": tools_package,
@@ -624,10 +627,23 @@ class BackendSkillContractTest(unittest.TestCase):
             })
 
         self.assertEqual(available[0]["category"], "productivity")
+        self.assertEqual(available[0]["descriptionEn"], "Optional demo")
+        self.assertEqual(available[0]["descriptionZh"], "可选技能演示")
         self.assertEqual(available[0]["availableActions"], ["install-optional"])
         self.assertFalse(available[0]["installed"])
         self.assertTrue(installed[0]["installed"])
         self.assertEqual(installed[0]["availableActions"], [])
+
+    def test_optional_chinese_snapshot_covers_the_official_catalog(self):
+        document = json.loads(
+            (DASHBOARD / "data" / "optional_catalog.json").read_text(encoding="utf-8")
+        )
+        self.assertEqual(document["schemaVersion"], 1)
+        self.assertEqual(len(document["skills"]), 111)
+        self.assertTrue(all(
+            re.search(r"[\u4e00-\u9fff]", row["descriptionZh"])
+            for row in document["skills"].values()
+        ))
 
     def test_plugin_update_requires_confirmation_syncs_entry_and_records_history(self):
         with tempfile.TemporaryDirectory() as directory:
