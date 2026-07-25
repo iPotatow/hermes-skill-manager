@@ -47,6 +47,11 @@ test('desktop action policy preserves every backend operation and confirmation b
   assert.match(source, /payload\.status === 409/)
 })
 
+test('community updates use a network-tolerant request timeout', () => {
+  assert.match(source, /const COMMUNITY_UPDATE_TIMEOUT_MS = 300000/)
+  assert.match(source, /timeoutMs: action === 'update' \? COMMUNITY_UPDATE_TIMEOUT_MS : undefined/)
+})
+
 test('desktop renders Hermes and Codex user skills as tables without skill cards', () => {
   assert.match(source, /function SkillTable/)
   assert.match(source, /function CodexTable/)

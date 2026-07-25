@@ -1,5 +1,6 @@
 import asyncio
 import importlib.util
+import inspect
 import json
 import re
 import sys
@@ -628,6 +629,21 @@ class BackendSkillContractTest(unittest.TestCase):
         self.assertEqual(raised.exception.status_code, 503)
         self.assertIn("discovery failed", raised.exception.detail)
         self.assertLess(len(BACKEND.read_text(encoding="utf-8").splitlines()), 140)
+
+    def test_blocking_mutation_routes_run_in_fastapi_threadpool(self):
+        module = load_backend()
+        mutation_routes = (
+            "delete_skill",
+            "reset_skill",
+            "restore_builtin",
+            "update_skill",
+            "update_plugin",
+            "delete_codex_skill",
+            "sync_skill_to_codex",
+        )
+        for route in mutation_routes:
+            with self.subTest(route=route):
+                self.assertFalse(inspect.iscoroutinefunction(getattr(module, route)))
 
     def test_version_metadata_and_documentation_stay_in_sync(self):
         plugin_yaml = (ROOT / "plugin.yaml").read_text(encoding="utf-8")

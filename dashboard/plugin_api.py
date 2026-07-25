@@ -78,33 +78,35 @@ async def inventory() -> dict[str, Any]:
     return _run(lambda: _manager().inventory())
 
 
+# Mutation handlers intentionally use ``def`` so FastAPI dispatches blocking
+# Hub, Git, and filesystem work through its thread pool instead of the event loop.
 @router.post("/delete")
-async def delete_skill(action: SkillAction) -> dict[str, Any]:
+def delete_skill(action: SkillAction) -> dict[str, Any]:
     return _run(lambda: _manager().delete(action.source, action.name, action.confirm))
 
 
 @router.post("/reset")
-async def reset_skill(action: SkillAction) -> dict[str, Any]:
+def reset_skill(action: SkillAction) -> dict[str, Any]:
     return _run(lambda: _manager().reset(action.source, action.name, action.confirm))
 
 
 @router.post("/restore")
-async def restore_builtin(action: SkillAction) -> dict[str, Any]:
+def restore_builtin(action: SkillAction) -> dict[str, Any]:
     return _run(lambda: _manager().restore(action.name))
 
 
 @router.post("/update")
-async def update_skill(action: SkillAction) -> dict[str, Any]:
+def update_skill(action: SkillAction) -> dict[str, Any]:
     return _run(lambda: _manager().update(action.name))
 
 
 @router.post("/plugin-update")
-async def update_plugin(action: SkillAction) -> dict[str, Any]:
+def update_plugin(action: SkillAction) -> dict[str, Any]:
     return _run(lambda: _manager().update_plugin(action.confirm))
 
 
 @router.post("/delete-codex")
-async def delete_codex_skill(action: SkillAction) -> dict[str, Any]:
+def delete_codex_skill(action: SkillAction) -> dict[str, Any]:
     return _run(lambda: _manager().delete_codex(
         action.name,
         action.relative_path,
@@ -113,7 +115,7 @@ async def delete_codex_skill(action: SkillAction) -> dict[str, Any]:
 
 
 @router.post("/sync-codex")
-async def sync_skill_to_codex(action: SkillAction) -> dict[str, Any]:
+def sync_skill_to_codex(action: SkillAction) -> dict[str, Any]:
     return _run(lambda: _manager().sync_codex(
         action.source,
         action.name,

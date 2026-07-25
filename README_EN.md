@@ -15,6 +15,7 @@ English | [简体中文](README.md)
 - Skill details, recent actions, diagnostics, and automatic refresh
 - A page-level plugin update button with an explicit second confirmation and automatic Desktop entry hot reload
 - Built-in reset/delete/restore; Hub reset/update/delete; local delete
+- Community updates use a dedicated long request timeout, while FastAPI runs blocking mutations in its thread pool so updates do not falsely report a backend connection timeout
 - Deleting a community skill also removes the displayed residual copy and invalidates discovery caches so it cannot reappear as a local skill
 - Exact-name confirmation for delete and reset, with a one-click name-fill button
 - Built-in, community, and local skills all show the “Sync” action and can be copied to `$CODEX_HOME/skills/<skill-name>`; replacement requires exact-name confirmation
@@ -96,4 +97,4 @@ node --test tests/desktop_plugin_smoke.test.js
 python3 -m unittest discover -s tests -v
 ```
 
-Plugin ID: `skill-manager` · Desktop route: `/skill-manager` · Version: `1.7.0`
+Plugin ID: `skill-manager` · Desktop route: `/skill-manager` · Version: `1.7.1`

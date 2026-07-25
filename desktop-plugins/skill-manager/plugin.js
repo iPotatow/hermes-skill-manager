@@ -12,6 +12,9 @@ const ID = 'skill-manager'
 const ROUTE = '/skill-manager'
 const QUERY_KEY = [ID, 'inventory']
 const REFRESH_INTERVAL_MS = 15000
+// A Hub update checks the network, downloads content, and runs a security scan.
+// Hermes Desktop's generic 15s REST timeout is too short for that workflow.
+const COMMUNITY_UPDATE_TIMEOUT_MS = 300000
 const VIEWS = ['hermes', 'codex']
 const SOURCES = ['all', 'builtin', 'hub-installed', 'local']
 const CONFIRMED_ACTIONS = new Set(['delete', 'delete-codex', 'reset'])
@@ -389,7 +392,8 @@ function useSkillMutation(t, onComplete, onConflict, onActivity) {
   return useMutation({
     mutationFn: ({ action, row, confirm }) => pluginContext.rest(`/${action}`, {
       method: 'POST',
-      body: mutationBody(action, row, confirm)
+      body: mutationBody(action, row, confirm),
+      timeoutMs: action === 'update' ? COMMUNITY_UPDATE_TIMEOUT_MS : undefined
     }),
     onMutate: variables => {
       onActivity({ action: variables.action, row: variables.row, phase: 'execute' })
