@@ -1,0 +1,53 @@
+name: Sync Optional skill translations
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/sync-optional-translations.yml"
+      - "scripts/sync_optional_catalog.py"
+  schedule:
+    - cron: "17 3 * * 1"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sync-optional-skill-translations
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out skill manager
+        uses: actions/checkout@v6
+
+      - name: Check out Hermes translation sources
+        uses: actions/checkout@v6
+        with:
+          repository: NousResearch/hermes-agent
+          path: .upstream/hermes-agent
+          sparse-checkout: |
+            optional-skills
+            website/i18n/zh-Hans/docusaurus-plugin-content-docs/current/user-guide/skills/optional
+
+      - name: Synchronize Chinese descriptions
+        run: |
+          python3 scripts/sync_optional_catalog.py \
+            --hermes-root .upstream/hermes-agent
+
+      - name: Commit updated snapshot
+        run: |
+          if git diff --quiet -- dashboard/data/optional_catalog.json; then
+            echo "Optional translation snapshot is already current."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add dashboard/data/optional_catalog.json
+          git commit -m "Sync official Optional skill translations"
+          git push origin HEAD:main

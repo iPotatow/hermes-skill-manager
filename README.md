@@ -4,7 +4,7 @@
 
 `skill-manager`（Skill Manager / 技能管理）是独立的 Hermes Desktop 原生插件，用于查看和维护内建、Skills Hub、本地与官方 Optional 技能，并可管理 Codex 用户技能。它不包含 Hermes Dashboard 页面，也不依赖 Dashboard 插件仓库。
 
-版本：`1.8.2`
+版本：`1.8.3`
 
 ## 功能
 
@@ -13,6 +13,7 @@
 - Hermes、Optional 与 Codex 技能均使用紧凑表格展示，不使用技能卡片
 - Hermes 与 Codex 使用一级分段视图；Optional 与内建、社区、本地处于 Hermes 来源筛选的同一级
 - Optional 清单读取 Hermes 随包提供的官方目录，支持搜索、分类筛选、已安装状态与直接安装；简介随 Desktop 语言切换，并内置完整中文快照
+- GitHub Actions 每周同步 Hermes 官方 Optional 中文文档；官方译文优先，未收录的新技能保留人工回退，缺失中文时会阻止错误快照提交
 - 搜索、来源和分类筛选支持响应式换行、全文搜索和一键清除
 - 内建技能中文简介取自 [Hermes 官方中文技能目录](https://hermes-agent.nousresearch.com/docs/zh-Hans/reference/skills-catalog)，跟随 Desktop 界面语言显示，后台定时刷新并保留离线快照
 - 技能详情、最近操作、诊断与自动刷新
@@ -80,7 +81,10 @@ dashboard/manifest.json                         # 后端挂载声明（不注册
 dashboard/plugin_api.py                         # 薄 FastAPI 适配器
 dashboard/skill_manager/                        # 可测试的技能管理领域与基础设施
 dashboard/data/builtin_catalog.json             # 官方中文内建技能目录离线快照
+dashboard/data/optional_catalog.json            # Optional 技能中文简介离线快照
 scripts/sync_builtin_catalog.py                 # 官方目录快照同步工具
+scripts/sync_optional_catalog.py                # Optional 官方中文译文同步工具
+.github/workflows/sync-optional-translations.yml # 每周自动同步 Optional 中文快照
 tests/                                          # Desktop 与后端测试
 ```
 
@@ -100,4 +104,4 @@ node --test tests/desktop_plugin_smoke.test.js
 python3 -m unittest discover -s tests -v
 ```
 
-插件 ID：`skill-manager` · Desktop 路径：`/skill-manager` · 版本：`1.7.1`
+插件 ID：`skill-manager` · Desktop 路径：`/skill-manager` · 版本：`1.8.3`

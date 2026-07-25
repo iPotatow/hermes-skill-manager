@@ -15,6 +15,7 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parents[1]
 DASHBOARD = ROOT / "dashboard"
 BACKEND = DASHBOARD / "plugin_api.py"
+OPTIONAL_SYNC = ROOT / "scripts" / "sync_optional_catalog.py"
 if str(DASHBOARD) not in sys.path:
     sys.path.insert(0, str(DASHBOARD))
 
@@ -39,6 +40,14 @@ from skill_manager.state import StateStore
 
 def load_backend():
     spec = importlib.util.spec_from_file_location("skill_manager_adapter_test", BACKEND)
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(module)
+    return module
+
+
+def load_optional_sync():
+    spec = importlib.util.spec_from_file_location("optional_catalog_sync_test", OPTIONAL_SYNC)
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
     spec.loader.exec_module(module)
@@ -644,6 +653,85 @@ class BackendSkillContractTest(unittest.TestCase):
             re.search(r"[\u4e00-\u9fff]", row["descriptionZh"])
             for row in document["skills"].values()
         ))
+
+    def test_optional_translation_sync_prefers_official_and_preserves_fallbacks(self):
+        sync = load_optional_sync()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            hermes = root / "hermes"
+            catalog = root / "optional_catalog.json"
+            for relative in ("creative/official-demo", "research/fallback-demo"):
+                skill = hermes / "optional-skills" / relative
+                skill.mkdir(parents=True)
+                (skill / "SKILL.md").write_text("---\nname: demo\n---\n", encoding="utf-8")
+
+            translated = (
+                hermes
+                / "website/i18n/zh-Hans/docusaurus-plugin-content-docs/current"
+                / "user-guide/skills/optional/creative/creative-official-demo.md"
+            )
+            translated.parent.mkdir(parents=True)
+            translated.write_text(
+                '---\ndescription: "官方新译文"\n---\n'
+                "| 路径 | `optional-skills/creative/official-demo` |\n",
+                encoding="utf-8",
+            )
+            catalog.write_text(json.dumps({
+                "skills": {
+                    "official/creative/official-demo": {"descriptionZh": "旧译文"},
+                    "official/research/fallback-demo": {"descriptionZh": "人工回退译文"},
+                    "official/removed": {"descriptionZh": "应被移除"},
+                }
+            }), encoding="utf-8")
+
+            self.assertTrue(sync.sync_catalog(hermes, catalog))
+            result = json.loads(catalog.read_text(encoding="utf-8"))
+
+        self.assertEqual(
+            result["skills"]["official/creative/official-demo"]["descriptionZh"],
+            "官方新译文",
+        )
+        self.assertEqual(
+            result["skills"]["official/research/fallback-demo"]["descriptionZh"],
+            "人工回退译文",
+        )
+        self.assertNotIn("official/removed", result["skills"])
+        self.assertEqual(result["officialTranslationCount"], 1)
+        self.assertEqual(result["fallbackTranslationCount"], 1)
+
+    def test_optional_translation_sync_rejects_untranslated_new_skills(self):
+        sync = load_optional_sync()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            skill = root / "optional-skills/new/demo"
+            skill.mkdir(parents=True)
+            (skill / "SKILL.md").write_text("---\nname: demo\n---\n", encoding="utf-8")
+            docs = (
+                root
+                / "website/i18n/zh-Hans/docusaurus-plugin-content-docs/current"
+                / "user-guide/skills/optional"
+            )
+            docs.mkdir(parents=True)
+            (docs / "placeholder.md").write_text(
+                '---\ndescription: "占位译文"\n---\n'
+                "| 路径 | `optional-skills/other/placeholder` |\n",
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(ValueError, "没有官方中文译文"):
+                sync.build_catalog(root, Path(directory) / "missing.json")
+
+    def test_optional_translation_workflow_is_scheduled_and_scoped(self):
+        workflow = (
+            ROOT / ".github" / "workflows" / "sync-optional-translations.yml"
+        ).read_text(encoding="utf-8")
+        self.assertIn("workflow_dispatch:", workflow)
+        self.assertIn('cron: "17 3 * * 1"', workflow)
+        self.assertEqual(workflow.count("uses: actions/checkout@v6"), 2)
+        self.assertIn("contents: write", workflow)
+        self.assertIn("scripts/sync_optional_catalog.py", workflow)
+        self.assertIn("git add dashboard/data/optional_catalog.json", workflow)
+        self.assertNotIn("git add -A", workflow)
 
     def test_plugin_update_requires_confirmation_syncs_entry_and_records_history(self):
         with tempfile.TemporaryDirectory() as directory:

@@ -1,6 +1,8 @@
 {
   "schemaVersion": 1,
-  "source": "Hermes official Simplified Chinese Optional skill docs with local fallbacks for newer entries",
+  "source": "https://github.com/NousResearch/hermes-agent/tree/main/website/i18n/zh-Hans/docusaurus-plugin-content-docs/current/user-guide/skills/optional",
+  "officialTranslationCount": 86,
+  "fallbackTranslationCount": 25,
   "skills": {
     "official/autonomous-ai-agents/antigravity-cli": {
       "descriptionZh": "操作 Antigravity CLI（agy）：插件、认证与沙箱管理。"

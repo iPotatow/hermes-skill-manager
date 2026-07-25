@@ -4,7 +4,7 @@ English | [简体中文](README.md)
 
 `skill-manager` (Skill Manager / 技能管理) is a standalone native Hermes Desktop plugin for inspecting and maintaining built-in, Skills Hub, local, and official Optional skills, and for managing Codex user skills. It contains no Dashboard page and does not depend on the Dashboard plugin repository.
 
-Version: `1.8.2`
+Version: `1.8.3`
 
 ## Features
 
@@ -13,6 +13,7 @@ Version: `1.8.2`
 - Compact tables for Hermes, Optional, and Codex skills, with no skill-card layout
 - Top-level Hermes/Codex segmented views; Optional sits beside Built-in, Community, and Local in the Hermes source filter
 - The Optional inventory reads Hermes' bundled official catalog and supports search, category filters, installed state, and direct installation; descriptions follow the Desktop language with a complete bundled Chinese snapshot
+- A weekly GitHub Actions workflow syncs Hermes' official Optional Chinese docs; official translations win, manual fallbacks survive gaps, and missing Chinese blocks an invalid snapshot commit
 - Responsive, wrapping search and filters with full-text search and one-click reset
 - Built-in Chinese descriptions come from the [official Hermes Chinese skills catalog](https://hermes-agent.nousresearch.com/docs/zh-Hans/reference/skills-catalog), follow the Desktop UI language, and use background refresh with an offline snapshot
 - Skill details, recent actions, diagnostics, and automatic refresh
@@ -80,7 +81,10 @@ dashboard/manifest.json                         # backend mount only; no Dashboa
 dashboard/plugin_api.py                         # thin FastAPI adapter
 dashboard/skill_manager/                        # testable domain and infrastructure
 dashboard/data/builtin_catalog.json             # offline snapshot of official Chinese descriptions
+dashboard/data/optional_catalog.json            # offline Optional Chinese descriptions
 scripts/sync_builtin_catalog.py                 # official catalog snapshot sync tool
+scripts/sync_optional_catalog.py                # Optional Chinese translation sync
+.github/workflows/sync-optional-translations.yml # weekly Optional snapshot automation
 tests/                                          # Desktop and backend tests
 ```
 
@@ -100,4 +104,4 @@ node --test tests/desktop_plugin_smoke.test.js
 python3 -m unittest discover -s tests -v
 ```
 
-Plugin ID: `skill-manager` · Desktop route: `/skill-manager` · Version: `1.7.1`
+Plugin ID: `skill-manager` · Desktop route: `/skill-manager` · Version: `1.8.3`
