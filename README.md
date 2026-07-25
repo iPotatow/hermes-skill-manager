@@ -4,15 +4,15 @@
 
 `skill-manager`（Skill Manager / 技能管理）是独立的 Hermes Desktop 原生插件，用于查看和维护内建、Skills Hub、本地与官方 Optional 技能，并可管理 Codex 用户技能。它不包含 Hermes Dashboard 页面，也不依赖 Dashboard 插件仓库。
 
-版本：`1.8.0`
+版本：`1.8.1`
 
 ## 功能
 
 - Desktop 侧边栏页面与 `⌘K` 命令入口
 - Dashboard 清单仅挂载后端 API，不注册 Dashboard 侧边栏
 - Hermes、Optional 与 Codex 技能均使用紧凑表格展示，不使用技能卡片
-- Hermes、Optional 与 Codex 使用一级分段视图，来源筛选只作用于 Hermes 清单
-- Optional 视图读取 Hermes 随包提供的官方目录，支持搜索、分类筛选、已安装状态与直接安装
+- Hermes 与 Codex 使用一级分段视图；Optional 与内建、社区、本地处于 Hermes 来源筛选的同一级
+- Optional 清单读取 Hermes 随包提供的官方目录，支持搜索、分类筛选、已安装状态与直接安装
 - 搜索、来源和分类筛选支持响应式换行、全文搜索和一键清除
 - 内建技能中文简介取自 [Hermes 官方中文技能目录](https://hermes-agent.nousresearch.com/docs/zh-Hans/reference/skills-catalog)，跟随 Desktop 界面语言显示，后台定时刷新并保留离线快照
 - 技能详情、最近操作、诊断与自动刷新

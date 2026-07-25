@@ -146,15 +146,16 @@ test('desktop copy is bilingual and includes backend-mount guidance', () => {
   assert.doesNotMatch(source, /document\.documentElement\.lang|navigator\.language/)
 })
 
-test('Hermes, Optional, and Codex are separate inventory views with correct totals', () => {
-  assert.match(source, /const VIEWS = \['hermes', 'optional', 'codex'\]/)
-  assert.match(source, /const SOURCES = \['all', 'builtin', 'hub-installed', 'local'\]/)
+test('Optional sits beside built-in as a Hermes source-level inventory', () => {
+  assert.match(source, /const VIEWS = \['hermes', 'codex'\]/)
+  assert.match(source, /const SOURCES = \['all', 'builtin', 'optional', 'hub-installed', 'local'\]/)
   assert.match(source, /jsx\(SegmentedControl/)
   assert.match(source, /const showingCodex = filters\.view === 'codex'/)
-  assert.match(source, /const showingOptional = filters\.view === 'optional'/)
+  assert.match(source, /const showingOptional = !showingCodex && filters\.source === 'optional'/)
   assert.match(source, /showingOptional \? view\.optional\.length : view\.rows\.length/)
   assert.match(source, /showingCodex\s*\? jsx\(CodexTable/)
   assert.match(source, /showingOptional\s*\? jsx\(OptionalTable/)
+  assert.match(source, /builtin: '内建', optional: '可选'/)
   assert.match(source, /onClick: \(\) => onAction\(row, 'install-optional'\)/)
   assert.match(source, /showMissingBuiltin: '显示可恢复的内建技能'/)
   assert.doesNotMatch(source, /showDeleted/)

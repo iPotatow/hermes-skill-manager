@@ -15,8 +15,8 @@ const REFRESH_INTERVAL_MS = 15000
 // Hub mutations can download content and run a security scan. Hermes Desktop's
 // generic 15s REST timeout is too short for that workflow.
 const HUB_MUTATION_TIMEOUT_MS = 300000
-const VIEWS = ['hermes', 'optional', 'codex']
-const SOURCES = ['all', 'builtin', 'hub-installed', 'local']
+const VIEWS = ['hermes', 'codex']
+const SOURCES = ['all', 'builtin', 'optional', 'hub-installed', 'local']
 const CONFIRMED_ACTIONS = new Set(['delete', 'delete-codex', 'reset'])
 const TONE_CLASSES = {
   enabled: 'text-foreground border-(--ui-stroke-primary)',
@@ -82,10 +82,10 @@ const MESSAGES = {
     },
     nav: 'Skill Manager',
     open: 'Open Skill Manager',
-    views: { hermes: 'Hermes skills', optional: 'Optional skills', codex: 'Codex skills' },
+    views: { hermes: 'Hermes skills', codex: 'Codex skills' },
     stats: { disabled: 'Disabled', restorable: 'Restorable', diagnostics: 'Diagnostics' },
     sources: {
-      all: 'All', builtin: 'Built-in', 'hub-installed': 'Community',
+      all: 'All', builtin: 'Built-in', optional: 'Optional', 'hub-installed': 'Community',
       local: 'Local', codex: 'Codex'
     },
     statuses: { all: 'All statuses', enabled: 'Enabled', disabled: 'Disabled', deleted: 'Deleted' },
@@ -180,10 +180,10 @@ const MESSAGES = {
     },
     nav: '技能管理',
     open: '打开技能管理',
-    views: { hermes: 'Hermes 技能', optional: 'Optional 技能', codex: 'Codex 技能' },
+    views: { hermes: 'Hermes 技能', codex: 'Codex 技能' },
     stats: { disabled: '已停用', restorable: '可恢复', diagnostics: '诊断' },
     sources: {
-      all: '全部', builtin: '内建', 'hub-installed': '社区',
+      all: '全部', builtin: '内建', optional: '可选', 'hub-installed': '社区',
       local: '本地', codex: 'Codex'
     },
     statuses: { all: '全部状态', enabled: '启用', disabled: '停用', deleted: '已删除' },
@@ -1131,11 +1131,11 @@ function FilterPanel({
   onChange, onClear, onViewChange, optionalCount, rowCount, totalCount, visibleCount, t
 }) {
   const showingCodex = filters.view === 'codex'
-  const showingOptional = filters.view === 'optional'
+  const showingOptional = !showingCodex && filters.source === 'optional'
   const hasActiveFilters = Boolean(filters.query)
     || (!showingCodex && filters.category !== 'all')
-    || (!showingCodex && !showingOptional && (filters.source !== 'all' || filters.showMissingBuiltin))
-  const viewCounts = { hermes: hermesCount, optional: optionalCount, codex: codexCount }
+    || (!showingCodex && (filters.source !== 'all' || filters.showMissingBuiltin))
+  const viewCounts = { hermes: hermesCount, codex: codexCount }
   const viewOptions = VIEWS.map(id => ({
     id,
     label: `${t(`views.${id}`)} ${viewCounts[id]}`
@@ -1151,14 +1151,16 @@ function FilterPanel({
         })
       ] }),
       jsxs('div', { className: 'flex flex-wrap items-center gap-2', children: [
-        showingCodex || showingOptional ? null : jsx('div', {
+        showingCodex ? null : jsx('div', {
           className: 'flex flex-wrap gap-1.5',
           children: SOURCES.map(key => jsx(Button, {
             'aria-pressed': filters.source === key,
             size: 'sm',
             variant: filters.source === key ? 'default' : 'secondary',
             onClick: () => onChange('source', key),
-            children: `${t(`sources.${key}`)} ${key === 'all' ? rowCount : counts[key] || 0}`
+            children: `${t(`sources.${key}`)} ${
+              key === 'all' ? rowCount : key === 'optional' ? optionalCount : counts[key] || 0
+            }`
           }, key))
         }),
         jsx(Input, {
@@ -1292,7 +1294,7 @@ function SkillManagePage() {
   const language = t('language') === 'zh' ? 'zh' : 'en'
   const view = useInventoryView(data, { ...filters, language }, filters.showMissingBuiltin, t)
   const showingCodex = filters.view === 'codex'
-  const showingOptional = filters.view === 'optional'
+  const showingOptional = !showingCodex && filters.source === 'optional'
   const diagnostics = asArray(data.diagnostics)
   const summary = {
     disabled: view.installed.filter(row => row.status === 'disabled').length,
