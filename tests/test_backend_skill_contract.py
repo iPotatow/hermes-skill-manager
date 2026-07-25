@@ -15,6 +15,7 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parents[1]
 DASHBOARD = ROOT / "dashboard"
 BACKEND = DASHBOARD / "plugin_api.py"
+BUILTIN_SYNC = ROOT / "scripts" / "sync_builtin_catalog.py"
 OPTIONAL_SYNC = ROOT / "scripts" / "sync_optional_catalog.py"
 if str(DASHBOARD) not in sys.path:
     sys.path.insert(0, str(DASHBOARD))
@@ -48,6 +49,14 @@ def load_backend():
 
 def load_optional_sync():
     spec = importlib.util.spec_from_file_location("optional_catalog_sync_test", OPTIONAL_SYNC)
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(module)
+    return module
+
+
+def load_builtin_sync():
+    spec = importlib.util.spec_from_file_location("builtin_catalog_sync_test", BUILTIN_SYNC)
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
     spec.loader.exec_module(module)
@@ -194,11 +203,54 @@ class BackendSkillContractTest(unittest.TestCase):
         )
         self.assertEqual(catalog["schemaVersion"], 2)
         self.assertEqual(catalog["source"], OFFICIAL_CATALOG_URL)
-        self.assertGreater(len(catalog["skills"]), 60)
+        self.assertEqual(len(catalog["skills"]), 69)
+        self.assertEqual(catalog["officialTranslationCount"], 64)
+        self.assertEqual(catalog["fallbackTranslationCount"], 5)
         self.assertNotIn("petdex", catalog["skills"])
-        self.assertNotIn("simplify-code", catalog["skills"])
+        self.assertIn("simplify-code", catalog["skills"])
         for row in catalog["skills"].values():
             self.assertEqual(set(row), {"descriptionZh", "path"})
+
+    def test_builtin_translation_sync_prefers_official_and_fills_new_skills(self):
+        sync = load_builtin_sync()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            catalog = root / "builtin_catalog.json"
+            for relative in ("creative/official-demo", "productivity/docx"):
+                skill = root / "skills" / relative
+                skill.mkdir(parents=True)
+                (skill / "SKILL.md").write_text("---\nname: demo\n---\n", encoding="utf-8")
+            docs = (
+                root
+                / "website/i18n/zh-Hans/docusaurus-plugin-content-docs/current"
+                / "reference/skills-catalog.md"
+            )
+            docs.parent.mkdir(parents=True)
+            docs.write_text(
+                "| [`official-demo`](/demo) | 官方内建译文 | `creative/official-demo` |\n",
+                encoding="utf-8",
+            )
+            catalog.write_text(json.dumps({
+                "skills": {
+                    "official-demo": {"descriptionZh": "旧译文", "path": "creative/official-demo"},
+                    "removed": {"descriptionZh": "应被移除", "path": "removed"},
+                }
+            }), encoding="utf-8")
+
+            self.assertTrue(sync.sync_catalog(root, catalog))
+            result = json.loads(catalog.read_text(encoding="utf-8"))
+
+        self.assertEqual(
+            result["skills"]["official-demo"]["descriptionZh"],
+            "官方内建译文",
+        )
+        self.assertEqual(
+            result["skills"]["docx"]["descriptionZh"],
+            sync.LOCAL_FALLBACKS["docx"],
+        )
+        self.assertNotIn("removed", result["skills"])
+        self.assertEqual(result["officialTranslationCount"], 1)
+        self.assertEqual(result["fallbackTranslationCount"], 1)
 
     def test_copy_file_atomic_replaces_desktop_entry_without_temporary_files(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -721,16 +773,18 @@ class BackendSkillContractTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "没有官方中文译文"):
                 sync.build_catalog(root, Path(directory) / "missing.json")
 
-    def test_optional_translation_workflow_is_scheduled_and_scoped(self):
+    def test_translation_workflow_is_scheduled_unified_and_scoped(self):
         workflow = (
-            ROOT / ".github" / "workflows" / "sync-optional-translations.yml"
+            ROOT / ".github" / "workflows" / "sync-skill-translations.yml"
         ).read_text(encoding="utf-8")
         self.assertIn("workflow_dispatch:", workflow)
         self.assertIn('cron: "17 3 * * 1"', workflow)
         self.assertEqual(workflow.count("uses: actions/checkout@v6"), 2)
         self.assertIn("contents: write", workflow)
+        self.assertIn("scripts/sync_builtin_catalog.py", workflow)
         self.assertIn("scripts/sync_optional_catalog.py", workflow)
-        self.assertIn("git add dashboard/data/optional_catalog.json", workflow)
+        self.assertIn("dashboard/data/builtin_catalog.json", workflow)
+        self.assertIn("dashboard/data/optional_catalog.json", workflow)
         self.assertNotIn("git add -A", workflow)
 
     def test_plugin_update_requires_confirmation_syncs_entry_and_records_history(self):

@@ -1,6 +1,8 @@
 {
   "schemaVersion": 2,
   "source": "https://hermes-agent.nousresearch.com/docs/zh-Hans/reference/skills-catalog",
+  "officialTranslationCount": 64,
+  "fallbackTranslationCount": 5,
   "skills": {
     "airtable": {
       "descriptionZh": "通过 curl 调用 Airtable REST API：记录增删改查、过滤、upsert。",
@@ -30,10 +32,6 @@
       "descriptionZh": "ASCII 视频：将视频/音频转换为彩色 ASCII MP4/GIF。",
       "path": "creative/ascii-video"
     },
-    "audiocraft-audio-generation": {
-      "descriptionZh": "AudioCraft：MusicGen 文本转音乐、AudioGen 文本转音效。",
-      "path": "mlops/models/audiocraft"
-    },
     "baoyu-infographic": {
       "descriptionZh": "信息图（可视化）：21 种布局 × 21 种风格。",
       "path": "creative/baoyu-infographic"
@@ -62,17 +60,25 @@
       "descriptionZh": "使用 ComfyUI 生成图像、视频和音频——安装、启动、管理节点/模型、运行带参数注入的工作流。使用官方 comfy-cli 管理生命周期，通过 REST/WebSocket API 直接执行。",
       "path": "creative/comfyui"
     },
+    "computer-use": {
+      "descriptionZh": "在后台操作用户桌面，包括点击、输入、滚动和拖拽，不抢占光标、键盘焦点或切换虚拟桌面。支持 macOS、Windows 和 Linux。",
+      "path": "autonomous-ai-agents/computer-use"
+    },
     "design-md": {
       "descriptionZh": "编写/验证/导出 Google 的 DESIGN.md token 规范文件。",
       "path": "creative/design-md"
     },
+    "docx": {
+      "descriptionZh": "创建、读取和编辑 Word .docx 文档及模板。",
+      "path": "productivity/docx"
+    },
     "dogfood": {
       "descriptionZh": "Web 应用探索性 QA：发现 bug、收集证据、生成报告。",
-      "path": "dogfood"
+      "path": "software-development/dogfood"
     },
     "evaluating-llms-harness": {
       "descriptionZh": "lm-eval-harness：对 LLM 进行基准测试（MMLU、GSM8K 等）。",
-      "path": "mlops/evaluation/lm-evaluation-harness"
+      "path": "mlops/evaluation/evaluating-llms-harness"
     },
     "excalidraw": {
       "descriptionZh": "手绘风格的 Excalidraw JSON 图表（架构、流程、时序）。",
@@ -110,10 +116,6 @@
       "descriptionZh": "通过 gws CLI 或 Python 操作 Gmail、Calendar、Drive、Docs、Sheets。",
       "path": "productivity/google-workspace"
     },
-    "heartmula": {
-      "descriptionZh": "HeartMuLa：根据歌词 + 标签生成类 Suno 风格的歌曲。",
-      "path": "media/heartmula"
-    },
     "hermes-agent": {
       "descriptionZh": "配置、扩展或贡献 Hermes Agent。",
       "path": "autonomous-ai-agents/hermes-agent"
@@ -138,10 +140,6 @@
       "descriptionZh": "在 macOS 上通过 imsg CLI 发送和接收 iMessage/SMS。",
       "path": "apple/imessage"
     },
-    "jupyter-live-kernel": {
-      "descriptionZh": "通过实时 Jupyter kernel（hamelnb）进行迭代式 Python 开发。",
-      "path": "data-science/jupyter-live-kernel"
-    },
     "llama-cpp": {
       "descriptionZh": "llama.cpp 本地 GGUF 推理 + HF Hub 模型发现。",
       "path": "mlops/inference/llama-cpp"
@@ -149,10 +147,6 @@
     "llm-wiki": {
       "descriptionZh": "Karpathy 的 LLM Wiki：构建/查询互联 Markdown 知识库。",
       "path": "research/llm-wiki"
-    },
-    "macos-computer-use": {
-      "descriptionZh": "在后台驱动 macOS 桌面——截图、鼠标、键盘、滚动、拖拽——不抢占用户的光标、键盘焦点或 Space。适用于任何支持工具调用的模型。每当需要 computer_use 工具时加载此技能。",
-      "path": "apple/macos-computer-use"
     },
     "manim-video": {
       "descriptionZh": "Manim CE 动画：3Blue1Brown 风格数学/算法视频。",
@@ -163,7 +157,7 @@
       "path": "productivity/maps"
     },
     "nano-pdf": {
-      "descriptionZh": "通过 nano-pdf CLI 编辑 PDF 文本/错别字/标题（自然语言 prompt）。",
+      "descriptionZh": "通过自然语言指令编辑现有 PDF 中的文本。",
       "path": "productivity/nano-pdf"
     },
     "node-inspect-debugger": {
@@ -194,8 +188,12 @@
       "descriptionZh": "p5.js 草图：生成艺术、着色器、交互、3D。",
       "path": "creative/p5js"
     },
+    "pdf": {
+      "descriptionZh": "创建、合并、拆分、填写和保护 PDF 文件。",
+      "path": "productivity/pdf"
+    },
     "plan": {
-      "descriptionZh": "计划模式：将 Markdown 计划写入 .hermes/plans/，不执行。",
+      "descriptionZh": "计划模式：将 Markdown 计划写入 `.hermes/plans/`，不执行。",
       "path": "software-development/plan"
     },
     "polymarket": {
@@ -226,13 +224,13 @@
       "descriptionZh": "为 NeurIPS/ICML/ICLR 撰写 ML 论文：从设计到投稿。",
       "path": "research/research-paper-writing"
     },
-    "segment-anything-model": {
-      "descriptionZh": "SAM：通过点、框、掩码进行零样本图像分割。",
-      "path": "mlops/models/segment-anything"
-    },
     "serving-llms-vllm": {
       "descriptionZh": "vLLM：高吞吐量 LLM 服务、OpenAI API 兼容、量化支持。",
-      "path": "mlops/inference/vllm"
+      "path": "mlops/inference/serving-llms-vllm"
+    },
+    "simplify-code": {
+      "descriptionZh": "通过 4 个并行 agent 清理最近的代码变更。",
+      "path": "software-development/simplify-code"
     },
     "sketch": {
       "descriptionZh": "一次性 HTML 原型：生成 2-3 个设计变体供对比。",
@@ -270,6 +268,10 @@
       "descriptionZh": "W&B：记录 ML 实验、超参数搜索、模型注册表、仪表盘。",
       "path": "mlops/evaluation/weights-and-biases"
     },
+    "xlsx": {
+      "descriptionZh": "创建、读取和编辑 Excel .xlsx 电子表格及 CSV 文件。",
+      "path": "productivity/xlsx"
+    },
     "xurl": {
       "descriptionZh": "通过 xurl CLI 操作 X/Twitter：发帖、搜索、私信、媒体、v2 API。",
       "path": "social-media/xurl"
@@ -277,10 +279,6 @@
     "youtube-content": {
       "descriptionZh": "将 YouTube 字幕转换为摘要、推文串、博客文章。",
       "path": "media/youtube-content"
-    },
-    "yuanbao": {
-      "descriptionZh": "元宝（Yuanbao）群组：@提及用户、查询信息/成员。",
-      "path": "yuanbao"
     }
   }
 }
