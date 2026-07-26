@@ -4,7 +4,7 @@ English | [简体中文](README.md)
 
 `skill-manager` (Skill Manager / 技能管理) is a standalone native Hermes Desktop plugin for inspecting and maintaining built-in, Skills Hub, local, and official Optional skills, and for managing Codex user skills. It contains no Dashboard page and does not depend on the Dashboard plugin repository.
 
-Version: `1.8.4`
+Version: `1.8.5`
 
 ## Features
 
@@ -12,7 +12,7 @@ Version: `1.8.4`
 - The Dashboard manifest mounts backend APIs without adding a Dashboard sidebar item
 - Compact tables for Hermes, Optional, and Codex skills, with no skill-card layout
 - Top-level Hermes/Codex segmented views; Optional sits beside Built-in, Community, and Local in the Hermes source filter
-- The Optional inventory reads Hermes' bundled official catalog and supports search, category filters, installed state, and direct installation; descriptions follow the Desktop language with a complete bundled Chinese snapshot
+- The Optional inventory reads Hermes' bundled official catalog and supports search, category filters, and direct installation; installed entries have the same reset, delete, and Codex sync actions as built-ins; descriptions follow the Desktop language with a complete bundled Chinese snapshot
 - A weekly GitHub Actions workflow synchronizes both built-in and Optional official Chinese docs; official translations win, manual fallbacks survive gaps, and missing Chinese blocks an invalid snapshot commit
 - Responsive, wrapping search and filters with full-text search and one-click reset
 - Built-in Chinese descriptions come from the [official Hermes Chinese skills catalog](https://hermes-agent.nousresearch.com/docs/zh-Hans/reference/skills-catalog), follow the Desktop UI language, and use background refresh with an offline snapshot
@@ -22,14 +22,14 @@ Version: `1.8.4`
 - Community updates and Optional installs use a dedicated long request timeout, while FastAPI runs blocking mutations in its thread pool so operations do not falsely report a backend connection timeout
 - Deleting a community skill also removes the displayed residual copy and invalidates discovery caches so it cannot reappear as a local skill
 - Exact-name confirmation for delete and reset, with a one-click name-fill button
-- Built-in, community, and local skills all show the “Sync” action and can be copied to `$CODEX_HOME/skills/<skill-name>`; replacement requires exact-name confirmation
+- Built-in, installed Optional, community, and local skills all show the “Sync” action and can be copied into Codex; replacement requires exact-name confirmation
 - The Hermes table shows Skill, Category, Source, and Actions without Codex status; source kind and repository share one cell, while descriptions stay on one line below skill names
 - The Codex view marks every user skill as either synced from Hermes or Codex-only, and synced rows include their Hermes source
 - Every row action is a direct button with no dropdown menu; table content is vertically centered while headers and edge columns remain sticky
 - Operations show a three-stage Confirm, Apply, and Refresh progress track, mirror the active phase in the affected row, and retain success or failure results
 - The header summarizes disabled, restorable, and diagnostic counts; restorable built-ins can be added to the inventory on demand
 - The Codex view hides `.system` skills and provides a direct delete action for user skills
-- Details are grouped into overview and location sections, with copyable paths, Escape-to-close, focus trapping, and focus restoration
+- Hermes, Optional, and Codex filesystem paths are hidden from the UI; details retain source and identifier information, with Escape-to-close, focus trapping, and focus restoration
 - English/Chinese UI, responsive layout, and Hermes Desktop theme support
 - Actionable install, enable, and restart guidance when the backend is not mounted
 
@@ -104,4 +104,4 @@ node --test tests/desktop_plugin_smoke.test.js
 python3 -m unittest discover -s tests -v
 ```
 
-Plugin ID: `skill-manager` · Desktop route: `/skill-manager` · Version: `1.8.4`
+Plugin ID: `skill-manager` · Desktop route: `/skill-manager` · Version: `1.8.5`

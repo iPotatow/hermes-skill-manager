@@ -172,9 +172,10 @@ class SkillInventory:
             from tools.skills_hub import OptionalSkillSource
 
             installed = hub if hub is not None else self.hub_by_name(diagnostics)
-            installed_identifiers = {
-                str(entry.get("identifier", ""))
+            installed_by_identifier = {
+                str(entry.get("identifier", "")): entry
                 for entry in installed.values()
+                if entry.get("identifier")
             }
             translations = self._load_optional_catalog()
             rows: list[dict[str, Any]] = []
@@ -190,8 +191,9 @@ class SkillInventory:
                 relative = identifier.removeprefix("official/")
                 parts = Path(relative).parts
                 category = Path(*parts[:-1]).as_posix() if len(parts) > 1 else ""
-                is_installed = identifier in installed_identifiers
-                rows.append({
+                installed_entry = installed_by_identifier.get(identifier)
+                is_installed = installed_entry is not None
+                row = {
                     "name": str(item.name),
                     "description": description_zh,
                     "descriptionEn": description_en,
@@ -202,11 +204,17 @@ class SkillInventory:
                     "rawSource": "official",
                     "trustLevel": "official",
                     "identifier": identifier,
-                    "catalogPath": str(item.path or ""),
+                    "actionSource": "hub-installed" if is_installed else "",
                     "status": "installed" if is_installed else "available",
                     "installed": is_installed,
-                    "availableActions": [] if is_installed else ["install-optional"],
-                })
+                    "availableActions": ["reset", "delete"] if is_installed else ["install-optional"],
+                }
+                row.update(self._codex_fields({
+                    "kind": "hub-installed" if is_installed else "optional",
+                    "name": row["name"],
+                    "status": "enabled" if is_installed else "available",
+                }))
+                rows.append(row)
             return sorted(rows, key=lambda row: (row["category"], row["name"]))
 
         return capture("optional-skills", load, [], diagnostics)

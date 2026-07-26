@@ -35,7 +35,7 @@ const MESSAGES = {
     title: 'Skill Manager',
     subtitle: 'Manage Hermes skills and sync them into Codex.',
     search: 'Search',
-    searchPlaceholder: 'Search skills, descriptions, sources, or paths',
+    searchPlaceholder: 'Search skills, descriptions, or sources',
     refresh: 'Refresh',
     refreshing: 'Refreshing',
     pluginUpdateButton: 'Update plugin',
@@ -103,12 +103,11 @@ const MESSAGES = {
       available: 'Available'
     },
     table: {
-      skill: 'Skill', category: 'Category', source: 'Source', type: 'Type',
-      path: 'Path', actions: 'Actions'
+      skill: 'Skill', category: 'Category', source: 'Source', type: 'Type', actions: 'Actions'
     },
     fields: {
       category: 'Category', source: 'Source', type: 'Type', trust: 'Trust', status: 'Status',
-      path: 'Hermes path', identifier: 'Identifier', installed: 'Installed',
+      identifier: 'Identifier', installed: 'Installed',
       updated: 'Updated'
     },
     actions: {
@@ -116,7 +115,7 @@ const MESSAGES = {
       'sync-codex': 'Sync', 'delete-codex': 'Delete', 'install-optional': 'Install',
       'plugin-update': 'Plugin update'
     },
-    detailGroups: { overview: 'Overview', location: 'Location' },
+    detailGroups: { overview: 'Overview', location: 'Source' },
     confirmTitle: {
       delete: 'Delete skill', 'delete-codex': 'Delete Codex skill',
       reset: 'Reset skill', 'sync-codex': 'Replace Codex skill'
@@ -133,7 +132,7 @@ const MESSAGES = {
     title: '技能管理',
     subtitle: '管理 Hermes 技能，并将它们同步到 Codex。',
     search: '搜索',
-    searchPlaceholder: '搜索技能、简介、来源或路径',
+    searchPlaceholder: '搜索技能、简介或来源',
     refresh: '刷新',
     refreshing: '刷新中',
     pluginUpdateButton: '更新插件',
@@ -201,12 +200,11 @@ const MESSAGES = {
       available: '可安装'
     },
     table: {
-      skill: '技能', category: '分类', source: '来源', type: '类型',
-      path: '路径', actions: '操作'
+      skill: '技能', category: '分类', source: '来源', type: '类型', actions: '操作'
     },
     fields: {
       category: '分类', source: '来源', type: '类型', trust: '信任', status: '状态',
-      path: 'Hermes 路径', identifier: '标识', installed: '安装时间',
+      identifier: '标识', installed: '安装时间',
       updated: '更新时间'
     },
     actions: {
@@ -214,7 +212,7 @@ const MESSAGES = {
       'sync-codex': '同步', 'delete-codex': '删除', 'install-optional': '安装',
       'plugin-update': '插件更新'
     },
-    detailGroups: { overview: '基本信息', location: '来源与路径' },
+    detailGroups: { overview: '基本信息', location: '来源信息' },
     confirmTitle: {
       delete: '删除技能', 'delete-codex': '删除 Codex 技能',
       reset: '重置技能', 'sync-codex': '覆盖 Codex 技能'
@@ -233,7 +231,10 @@ let pluginContext
 const asArray = value => Array.isArray(value) ? value : []
 const sourceOf = row => row.kind || row.source || 'local'
 const rawSourceOf = row => row.rawSource || row.source || sourceOf(row)
-const canSync = row => ['builtin', 'hub-installed', 'local'].includes(sourceOf(row))
+const canSync = row => (
+  ['builtin', 'hub-installed', 'local'].includes(sourceOf(row))
+  || (sourceOf(row) === 'optional' && row.installed)
+)
   && row.status !== 'deleted'
 const actionsOf = row => Array.from(new Set([
   ...asArray(row.availableActions),
@@ -329,7 +330,7 @@ function errorMessage(error, fallback, t, backendHint = false) {
 
 function mutationBody(action, row, confirm) {
   return {
-    source: sourceOf(row),
+    source: row.actionSource || sourceOf(row),
     name: row.name,
     ...(action === 'delete-codex' ? { relative_path: row.relativePath } : {}),
     ...(action === 'install-optional' ? { identifier: row.identifier } : {}),
@@ -353,8 +354,7 @@ function filterRows(rows, filters) {
     if (source !== 'all' && sourceOf(row) !== source) return false
     if (category !== 'all' && (row.category || t('root')) !== category) return false
     return !needle || [
-      row.name, row.category, row.source, row.trustLevel,
-      row.installPath, descriptionOf(row, language)
+      row.name, row.category, row.source, row.trustLevel, descriptionOf(row, language)
     ].join('\n').toLowerCase().includes(needle)
   }).sort((left, right) => String(left.name).localeCompare(
     String(right.name),
@@ -366,7 +366,7 @@ function filterRows(rows, filters) {
 function filterCodexRows(rows, query) {
   const needle = query.trim().toLowerCase()
   return rows.filter(row => !needle || [
-    row.name, row.description, row.relativePath, row.path,
+    row.name, row.description,
     row.hermesSkill?.name, row.hermesSkill?.source, row.hermesSkill?.kind
   ].join('\n').toLowerCase().includes(needle))
 }
@@ -377,7 +377,7 @@ function filterOptionalRows(rows, filters) {
   return rows.filter(row => {
     if (category !== 'all' && (row.category || '') !== category) return false
     return !needle || [
-      row.name, descriptionOf(row, language), row.category, row.identifier, row.catalogPath
+      row.name, descriptionOf(row, language), row.category, row.identifier
     ].join('\n').toLowerCase().includes(needle)
   })
 }
@@ -718,7 +718,6 @@ function DetailDrawer({ activity, busy, language, onAction, onClose, row, t }) {
   ]
   const locationFields = [
     [t('fields.source'), rawSourceOf(row)],
-    [t('fields.path'), row.installPath, true],
     [t('fields.identifier'), row.identifier, true],
     [t('fields.installed'), row.installedAt],
     [t('fields.updated'), row.updatedAt]
@@ -936,7 +935,7 @@ function CodexTable({ activity, busy, onAction, rows, t }) {
     className: 'overflow-x-auto rounded-sm border border-(--ui-stroke-secondary)',
     children: jsxs('table', {
       'aria-label': t('codexList.title'),
-      className: 'w-full min-w-[56rem] table-fixed border-collapse text-sm',
+      className: 'w-full min-w-[40rem] table-fixed border-collapse text-sm',
       children: [
         jsx('thead', {
           className: 'sticky top-0 z-10 bg-(--ui-bg-secondary) text-left text-xs text-(--ui-text-tertiary)',
@@ -945,7 +944,6 @@ function CodexTable({ activity, busy, onAction, rows, t }) {
               className: 'sticky left-0 z-20 w-[23rem] bg-(--ui-bg-secondary) px-3 py-2 align-middle font-medium',
               children: t('table.skill')
             }),
-            jsx('th', { className: 'w-[16rem] px-3 py-2 align-middle font-medium', children: t('table.path') }),
             jsx('th', {
               className: 'w-[10rem] px-3 py-2 align-middle font-medium',
               children: t('hermesSync.title')
@@ -971,10 +969,6 @@ function CodexTable({ activity, busy, onAction, rows, t }) {
                     children: row.description || t('noDescription')
                   })
                 ] })
-              }),
-              jsx('td', {
-                className: 'px-3 py-2 align-middle',
-                children: jsx('code', { className: 'break-all text-xs', children: row.relativePath })
               }),
               jsx('td', {
                 className: 'px-3 py-2 align-middle',
@@ -1053,18 +1047,7 @@ function OptionalTable({ activity, busy, language, onAction, rows, t }) {
               }),
               jsx('td', {
                 className: 'sticky right-0 z-[1] bg-background px-2 py-1.5 text-right align-middle group-hover:bg-(--ui-bg-secondary)',
-                children: row.installed
-                  ? null
-                  : jsxs('div', { className: 'space-y-1.5', children: [
-                      jsx(InlineOperation, { activity, row, t }),
-                      jsx(Button, {
-                        disabled: busy,
-                        size: 'sm',
-                        variant: 'secondary',
-                        onClick: () => onAction(row, 'install-optional'),
-                        children: t('actions.install-optional')
-                      })
-                    ] })
+                children: jsx(ActionButtons, { activity, busy, onAction, row, t })
               })
             ]
           }, row.identifier))
@@ -1110,18 +1093,6 @@ function PageHeader({ fetching, onRefresh, onUpdate, operating, summary, t, upda
         jsx(Stat, { label: t('stats.restorable'), value: summary.restorable }),
         jsx(Stat, { label: t('stats.diagnostics'), value: summary.diagnostics })
       ] })
-    ]
-  })
-}
-
-function PathLine({ path, t }) {
-  if (!path) return null
-  return jsxs('div', {
-    className: 'flex min-w-0 items-center gap-1 text-xs text-(--ui-text-tertiary)',
-    children: [
-      jsx(Codicon, { name: 'folder' }),
-      jsx('code', { className: 'min-w-0 truncate', title: path, children: path }),
-      jsx(CopyButton, { appearance: 'inline', label: t('copy'), showLabel: false, text: path })
     ]
   })
 }
@@ -1371,12 +1342,6 @@ function SkillManagePage() {
             t
           }),
           jsx(Diagnostics, { rows: diagnostics, t }),
-          jsx(PathLine, {
-            path: showingOptional
-              ? ''
-              : showingCodex ? data.meta?.codexSkillsDir : data.meta?.skillsDir,
-            t
-          }),
           jsx(FilterPanel, {
             categories: showingOptional ? view.optionalCategories : view.categories,
             codexCount: view.codex.length,

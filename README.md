@@ -4,7 +4,7 @@
 
 `skill-manager`（Skill Manager / 技能管理）是独立的 Hermes Desktop 原生插件，用于查看和维护内建、Skills Hub、本地与官方 Optional 技能，并可管理 Codex 用户技能。它不包含 Hermes Dashboard 页面，也不依赖 Dashboard 插件仓库。
 
-版本：`1.8.4`
+版本：`1.8.5`
 
 ## 功能
 
@@ -12,7 +12,7 @@
 - Dashboard 清单仅挂载后端 API，不注册 Dashboard 侧边栏
 - Hermes、Optional 与 Codex 技能均使用紧凑表格展示，不使用技能卡片
 - Hermes 与 Codex 使用一级分段视图；Optional 与内建、社区、本地处于 Hermes 来源筛选的同一级
-- Optional 清单读取 Hermes 随包提供的官方目录，支持搜索、分类筛选、已安装状态与直接安装；简介随 Desktop 语言切换，并内置完整中文快照
+- Optional 清单读取 Hermes 随包提供的官方目录，支持搜索、分类筛选和直接安装；已安装项拥有与内建技能相同的重置、删除与 Codex 同步操作；简介随 Desktop 语言切换，并内置完整中文快照
 - GitHub Actions 每周统一同步 Hermes 官方内建与 Optional 中文文档；官方译文优先，未收录的新技能保留人工回退，缺失中文时会阻止错误快照提交
 - 搜索、来源和分类筛选支持响应式换行、全文搜索和一键清除
 - 内建技能中文简介取自 [Hermes 官方中文技能目录](https://hermes-agent.nousresearch.com/docs/zh-Hans/reference/skills-catalog)，跟随 Desktop 界面语言显示，后台定时刷新并保留离线快照
@@ -22,14 +22,14 @@
 - 社区更新与 Optional 安装使用独立的长请求时限，阻塞型操作由 FastAPI 线程池执行，避免操作期间误报后端连接超时
 - 删除社区技能时同时清理界面当前发现的残留副本并刷新发现缓存，避免被重新识别为本地技能
 - 删除和重置要求输入完整技能名确认，确认框可一键填入名称
-- 内建、社区和本地技能均显示“同步”按钮，可一键同步到 `$CODEX_HOME/skills/<技能名>`；覆盖已有 Codex 技能时要求输入完整技能名确认
+- 内建、已安装的 Optional、社区和本地技能均显示“同步”按钮，可一键同步到 Codex；覆盖已有 Codex 技能时要求输入完整技能名确认
 - Hermes 主表按“技能、分类、来源、操作”展示，不再显示 Codex 状态；来源类型与具体仓库合并显示，简介位于技能名下方并限制为一行
 - Codex 视图标明每个用户技能是“同步于 Hermes”还是“仅 Codex”，同步项同时显示对应 Hermes 来源
 - 所有行操作直接显示为按钮，不使用下拉菜单；表格内容垂直居中，首尾列与表头支持粘滞定位
 - 操作过程以“确认、执行、刷新”三阶段进度条展示，当前技能行同步显示进行中状态，并保留成功或失败结果
 - 顶部汇总已停用、可恢复和诊断数量；“可恢复的内建技能”可按需加入清单
 - Codex 视图不显示 `.system` 系统技能，并可直接删除用户技能
-- 详情按基本信息、来源与路径分组，支持复制路径、`Esc` 关闭、焦点锁定与返回
+- 界面不显示 Hermes、Optional 或 Codex 文件路径；详情保留来源与标识信息，并支持 `Esc` 关闭、焦点锁定与返回
 - 中英文界面、响应式布局及 Hermes Desktop 主题适配
 - 后端未挂载时提供明确的安装、启用和重启提示
 
@@ -104,4 +104,4 @@ node --test tests/desktop_plugin_smoke.test.js
 python3 -m unittest discover -s tests -v
 ```
 
-插件 ID：`skill-manager` · Desktop 路径：`/skill-manager` · 版本：`1.8.4`
+插件 ID：`skill-manager` · Desktop 路径：`/skill-manager` · 版本：`1.8.5`

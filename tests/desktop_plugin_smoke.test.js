@@ -41,7 +41,8 @@ test('desktop action policy preserves every backend operation and confirmation b
   for (const action of ['delete', 'delete-codex', 'reset', 'restore', 'update', 'sync-codex']) {
     assert.match(source, new RegExp(action))
   }
-  assert.match(source, /\['builtin', 'hub-installed', 'local'\]\.includes\(sourceOf\(row\)\)/)
+  assert.match(source, /sourceOf\(row\) === 'optional' && row\.installed/)
+  assert.match(source, /source: row\.actionSource \|\| sourceOf\(row\)/)
   assert.match(source, /force:\s*action === 'sync-codex' && Boolean\(confirm\)/)
   assert.match(source, /CONFIRMED_ACTIONS = new Set\(\['delete', 'delete-codex', 'reset'\]\)/)
   assert.match(source, /payload\.status === 409/)
@@ -66,7 +67,7 @@ test('desktop renders Hermes, Optional, and Codex skills as tables without skill
 
 test('descriptions sit below skill names and stay on one line', () => {
   assert.match(source, /min-w-\[60rem\] table-fixed/)
-  assert.match(source, /min-w-\[56rem\] table-fixed/)
+  assert.match(source, /min-w-\[40rem\] table-fixed/)
   assert.match(source, /className: 'mt-0\.5 truncate text-xs text-\(--ui-text-secondary\)'/)
   assert.match(source, /title: descriptionOf\(row, language\) \|\| t\('noDescription'\)/)
   assert.match(source, /title: row\.description \|\| t\('noDescription'\)/)
@@ -159,12 +160,12 @@ test('Optional sits beside built-in as a Hermes source-level inventory', () => {
   assert.match(source, /showingCodex\s*\? jsx\(CodexTable/)
   assert.match(source, /showingOptional\s*\? jsx\(OptionalTable/)
   assert.match(source, /builtin: '内建', optional: '可选'/)
-  assert.match(source, /onClick: \(\) => onAction\(row, 'install-optional'\)/)
+  assert.match(source, /children: jsx\(ActionButtons, \{ activity, busy, onAction, row, t \}\)/)
   assert.match(source, /showMissingBuiltin: '显示可恢复的内建技能'/)
   assert.doesNotMatch(source, /showDeleted/)
 })
 
-test('drawers and confirmation overlays support keyboard focus and copyable paths', () => {
+test('paths stay hidden while drawers preserve keyboard focus and copyable identifiers', () => {
   assert.match(source, /function useDialogA11y/)
   assert.match(source, /event\.key === 'Escape'/)
   assert.match(source, /event\.key !== 'Tab'/)
@@ -172,6 +173,10 @@ test('drawers and confirmation overlays support keyboard focus and copyable path
   assert.match(source, /'aria-labelledby': 'skill-detail-title'/)
   assert.match(source, /'aria-labelledby': 'skill-confirm-title'/)
   assert.match(source, /jsx\(CopyButton/)
+  assert.doesNotMatch(source, /function PathLine/)
+  assert.doesNotMatch(source, /t\('table\.path'\)/)
+  assert.doesNotMatch(source, /t\('fields\.path'\)/)
+  assert.doesNotMatch(source, /row\.(?:installPath|catalogPath)/)
   assert.doesNotMatch(source, /codexFields/)
 })
 

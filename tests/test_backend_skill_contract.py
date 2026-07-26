@@ -693,7 +693,9 @@ class BackendSkillContractTest(unittest.TestCase):
         self.assertEqual(available[0]["availableActions"], ["install-optional"])
         self.assertFalse(available[0]["installed"])
         self.assertTrue(installed[0]["installed"])
-        self.assertEqual(installed[0]["availableActions"], [])
+        self.assertEqual(installed[0]["availableActions"], ["reset", "delete"])
+        self.assertEqual(installed[0]["actionSource"], "hub-installed")
+        self.assertNotIn("catalogPath", installed[0])
 
     def test_optional_chinese_snapshot_covers_the_official_catalog(self):
         document = json.loads(
