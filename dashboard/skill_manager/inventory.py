@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
@@ -65,14 +64,6 @@ class SkillInventory:
 
     def _load_catalog(self) -> dict[str, dict[str, str]]:
         return self.catalog.snapshot()
-
-    def _load_optional_catalog(self) -> dict[str, dict[str, str]]:
-        try:
-            document = json.loads(self.paths.optional_catalog.read_text(encoding="utf-8"))
-            skills = document.get("skills", {})
-            return skills if isinstance(skills, dict) else {}
-        except Exception:
-            return {}
 
     def _catalog_description(self, name: str, key: str, fallback: str = "") -> str:
         value = self._load_catalog().get(name, {}).get(key)
@@ -160,64 +151,6 @@ class SkillInventory:
             return list(_find_all_skills(skip_disabled=True))
 
         return capture("skill-discovery", load, [], diagnostics)
-
-    def optional_inventory(
-        self,
-        diagnostics: list[Diagnostic],
-        hub: dict[str, dict[str, Any]] | None = None,
-    ) -> list[dict[str, Any]]:
-        """Return the official opt-in catalog with current install state."""
-
-        def load() -> list[dict[str, Any]]:
-            from tools.skills_hub import OptionalSkillSource
-
-            installed = hub if hub is not None else self.hub_by_name(diagnostics)
-            installed_by_identifier = {
-                str(entry.get("identifier", "")): entry
-                for entry in installed.values()
-                if entry.get("identifier")
-            }
-            translations = self._load_optional_catalog()
-            rows: list[dict[str, Any]] = []
-            for item in OptionalSkillSource().search("", limit=10000):
-                identifier = str(item.identifier)
-                description_en = str(item.description or "")
-                translated = translations.get(identifier, {})
-                description_zh = (
-                    str(translated.get("descriptionZh", ""))
-                    if isinstance(translated, dict)
-                    else ""
-                ) or description_en
-                relative = identifier.removeprefix("official/")
-                parts = Path(relative).parts
-                category = Path(*parts[:-1]).as_posix() if len(parts) > 1 else ""
-                installed_entry = installed_by_identifier.get(identifier)
-                is_installed = installed_entry is not None
-                row = {
-                    "name": str(item.name),
-                    "description": description_zh,
-                    "descriptionEn": description_en,
-                    "descriptionZh": description_zh,
-                    "category": category,
-                    "kind": "optional",
-                    "source": "official",
-                    "rawSource": "official",
-                    "trustLevel": "official",
-                    "identifier": identifier,
-                    "actionSource": "hub-installed" if is_installed else "",
-                    "status": "installed" if is_installed else "available",
-                    "installed": is_installed,
-                    "availableActions": ["reset", "delete"] if is_installed else ["install-optional"],
-                }
-                row.update(self._codex_fields({
-                    "kind": "hub-installed" if is_installed else "optional",
-                    "name": row["name"],
-                    "status": "enabled" if is_installed else "available",
-                }))
-                rows.append(row)
-            return sorted(rows, key=lambda row: (row["category"], row["name"]))
-
-        return capture("optional-skills", load, [], diagnostics)
 
     @staticmethod
     def available_actions(row: dict[str, Any]) -> list[str]:
@@ -456,12 +389,3 @@ class SkillInventory:
         if diagnostics:
             raise self._discovery_error(diagnostics)
         raise SkillManagerError(404, f"未找到可恢复的内建技能：{name}")
-
-    def find_optional(self, identifier: str) -> dict[str, Any]:
-        diagnostics: list[Diagnostic] = []
-        for row in self.optional_inventory(diagnostics):
-            if row["identifier"] == identifier:
-                return row
-        if diagnostics:
-            raise self._discovery_error(diagnostics)
-        raise SkillManagerError(404, f"未找到 Optional 技能：{identifier}")

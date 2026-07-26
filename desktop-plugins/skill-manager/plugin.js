@@ -16,7 +16,7 @@ const REFRESH_INTERVAL_MS = 15000
 // generic 15s REST timeout is too short for that workflow.
 const HUB_MUTATION_TIMEOUT_MS = 300000
 const VIEWS = ['hermes', 'codex']
-const SOURCES = ['all', 'builtin', 'optional', 'hub-installed', 'local']
+const SOURCES = ['all', 'builtin', 'hub-installed', 'local']
 const CONFIRMED_ACTIONS = new Set(['delete', 'delete-codex', 'reset'])
 const TONE_CLASSES = {
   enabled: 'text-foreground border-(--ui-stroke-primary)',
@@ -85,7 +85,7 @@ const MESSAGES = {
     views: { hermes: 'Hermes skills', codex: 'Codex skills' },
     stats: { disabled: 'Disabled', restorable: 'Restorable', diagnostics: 'Diagnostics' },
     sources: {
-      all: 'All', builtin: 'Built-in', optional: 'Optional', 'hub-installed': 'Community',
+      all: 'All', builtin: 'Built-in', 'hub-installed': 'Community',
       local: 'Local', codex: 'Codex'
     },
     statuses: { all: 'All statuses', enabled: 'Enabled', disabled: 'Disabled', deleted: 'Deleted' },
@@ -95,12 +95,6 @@ const MESSAGES = {
       title: 'Codex user skills',
       count: value => `${value} skills`,
       empty: 'No Codex user skills found'
-    },
-    optionalList: {
-      title: 'Official Optional skills',
-      empty: 'No Optional skills found',
-      installed: 'Installed',
-      available: 'Available'
     },
     table: {
       skill: 'Skill', category: 'Category', source: 'Source', type: 'Type', actions: 'Actions'
@@ -112,7 +106,7 @@ const MESSAGES = {
     },
     actions: {
       delete: 'Delete', reset: 'Reset', update: 'Update', restore: 'Restore',
-      'sync-codex': 'Sync', 'delete-codex': 'Delete', 'install-optional': 'Install',
+      'sync-codex': 'Sync', 'delete-codex': 'Delete',
       'plugin-update': 'Plugin update'
     },
     detailGroups: { overview: 'Overview', location: 'Source' },
@@ -182,7 +176,7 @@ const MESSAGES = {
     views: { hermes: 'Hermes 技能', codex: 'Codex 技能' },
     stats: { disabled: '已停用', restorable: '可恢复', diagnostics: '诊断' },
     sources: {
-      all: '全部', builtin: '内建', optional: '可选', 'hub-installed': '社区',
+      all: '全部', builtin: '内建', 'hub-installed': '社区',
       local: '本地', codex: 'Codex'
     },
     statuses: { all: '全部状态', enabled: '启用', disabled: '停用', deleted: '已删除' },
@@ -192,12 +186,6 @@ const MESSAGES = {
       title: 'Codex 用户技能',
       count: value => `${value} 个技能`,
       empty: '尚未发现 Codex 用户技能'
-    },
-    optionalList: {
-      title: '官方 Optional 技能',
-      empty: '尚未发现 Optional 技能',
-      installed: '已安装',
-      available: '可安装'
     },
     table: {
       skill: '技能', category: '分类', source: '来源', type: '类型', actions: '操作'
@@ -209,7 +197,7 @@ const MESSAGES = {
     },
     actions: {
       delete: '删除', reset: '重置', update: '更新', restore: '恢复',
-      'sync-codex': '同步', 'delete-codex': '删除', 'install-optional': '安装',
+      'sync-codex': '同步', 'delete-codex': '删除',
       'plugin-update': '插件更新'
     },
     detailGroups: { overview: '基本信息', location: '来源信息' },
@@ -231,10 +219,7 @@ let pluginContext
 const asArray = value => Array.isArray(value) ? value : []
 const sourceOf = row => row.kind || row.source || 'local'
 const rawSourceOf = row => row.rawSource || row.source || sourceOf(row)
-const canSync = row => (
-  ['builtin', 'hub-installed', 'local'].includes(sourceOf(row))
-  || (sourceOf(row) === 'optional' && row.installed)
-)
+const canSync = row => ['builtin', 'hub-installed', 'local'].includes(sourceOf(row))
   && row.status !== 'deleted'
 const actionsOf = row => Array.from(new Set([
   ...asArray(row.availableActions),
@@ -330,10 +315,9 @@ function errorMessage(error, fallback, t, backendHint = false) {
 
 function mutationBody(action, row, confirm) {
   return {
-    source: row.actionSource || sourceOf(row),
+    source: sourceOf(row),
     name: row.name,
     ...(action === 'delete-codex' ? { relative_path: row.relativePath } : {}),
-    ...(action === 'install-optional' ? { identifier: row.identifier } : {}),
     ...(confirm ? { confirm } : {}),
     force: action === 'sync-codex' && Boolean(confirm)
   }
@@ -371,17 +355,6 @@ function filterCodexRows(rows, query) {
   ].join('\n').toLowerCase().includes(needle))
 }
 
-function filterOptionalRows(rows, filters) {
-  const { category, language, query } = filters
-  const needle = query.trim().toLowerCase()
-  return rows.filter(row => {
-    if (category !== 'all' && (row.category || '') !== category) return false
-    return !needle || [
-      row.name, descriptionOf(row, language), row.category, row.identifier
-    ].join('\n').toLowerCase().includes(needle)
-  })
-}
-
 function linkCodexToHermes(codexRows, hermesRows) {
   const syncedByName = new Map(
     hermesRows.filter(row => row.codexInstalled).map(row => [row.name, row])
@@ -393,7 +366,6 @@ function useInventoryView(data, filters, showMissingBuiltin, t) {
   const installed = asArray(data.skills)
   const missing = asArray(data.missingBuiltinSkills)
   const codex = asArray(data.codexSkills)
-  const optional = asArray(data.optionalSkills)
   const linkedCodex = useMemo(() => linkCodexToHermes(codex, installed), [codex, installed])
   const rows = showMissingBuiltin ? installed.concat(missing) : installed
   const categories = useMemo(
@@ -409,17 +381,9 @@ function useInventoryView(data, filters, showMissingBuiltin, t) {
     () => filterCodexRows(linkedCodex, filters.query),
     [linkedCodex, filters.query]
   )
-  const optionalCategories = useMemo(
-    () => Array.from(new Set(optional.map(row => row.category).filter(Boolean))).sort(),
-    [optional]
-  )
-  const optionalVisible = useMemo(
-    () => filterOptionalRows(optional, filters),
-    [optional, filters.query, filters.category]
-  )
   return {
-    categories, codex: linkedCodex, codexVisible, installed, missing, optional,
-    optionalCategories, optionalVisible, rowCounts, rows, visible
+    categories, codex: linkedCodex, codexVisible, installed, missing,
+    rowCounts, rows, visible
   }
 }
 
@@ -429,7 +393,7 @@ function useSkillMutation(t, onComplete, onConflict, onActivity) {
     mutationFn: ({ action, row, confirm }) => pluginContext.rest(`/${action}`, {
       method: 'POST',
       body: mutationBody(action, row, confirm),
-      timeoutMs: ['update', 'install-optional'].includes(action)
+      timeoutMs: action === 'update'
         ? HUB_MUTATION_TIMEOUT_MS
         : undefined
     }),
@@ -995,68 +959,6 @@ function CodexTable({ activity, busy, onAction, rows, t }) {
   })
 }
 
-function OptionalTable({ activity, busy, language, onAction, rows, t }) {
-  if (!rows.length) return jsx(EmptyState, {
-    title: t('optionalList.empty'),
-    description: t('emptyBody')
-  })
-  return jsx('div', {
-    className: 'overflow-x-auto rounded-sm border border-(--ui-stroke-secondary)',
-    children: jsxs('table', {
-      'aria-label': t('optionalList.title'),
-      className: 'w-full min-w-[54rem] table-fixed border-collapse text-sm',
-      children: [
-        jsx('thead', {
-          className: 'sticky top-0 z-10 bg-(--ui-bg-secondary) text-left text-xs text-(--ui-text-tertiary)',
-          children: jsx('tr', { children: [
-            jsx('th', {
-              className: 'sticky left-0 z-20 w-[28rem] bg-(--ui-bg-secondary) px-3 py-2 align-middle font-medium',
-              children: t('table.skill')
-            }),
-            jsx('th', { className: 'w-[12rem] px-3 py-2 align-middle font-medium', children: t('table.category') }),
-            jsx('th', { className: 'w-[7rem] px-3 py-2 align-middle font-medium', children: t('fields.status') }),
-            jsx('th', {
-              className: 'sticky right-0 z-20 w-[7rem] bg-(--ui-bg-secondary) px-3 py-2 text-right align-middle font-medium',
-              children: t('table.actions')
-            })
-          ] })
-        }),
-        jsx('tbody', {
-          className: 'divide-y divide-(--ui-stroke-secondary)',
-          children: rows.map(row => jsx('tr', {
-            className: 'group align-middle hover:bg-(--ui-bg-secondary)',
-            children: [
-              jsx('td', {
-                className: 'sticky left-0 z-[1] bg-background px-3 py-2 align-middle group-hover:bg-(--ui-bg-secondary)',
-                children: jsxs('div', { className: 'min-w-0', children: [
-                  jsx('div', { className: 'break-all font-medium', children: row.name }),
-                  jsx('div', {
-                    className: 'mt-0.5 truncate text-xs text-(--ui-text-secondary)',
-                    title: descriptionOf(row, language) || t('noDescription'),
-                    children: descriptionOf(row, language) || t('noDescription')
-                  })
-                ] })
-              }),
-              jsx('td', { className: 'px-3 py-2 align-middle', children: row.category || t('root') }),
-              jsx('td', {
-                className: 'px-3 py-2 align-middle',
-                children: jsx(ToneBadge, {
-                  tone: row.installed ? 'installed' : 'missing',
-                  children: t(`optionalList.${row.installed ? 'installed' : 'available'}`)
-                })
-              }),
-              jsx('td', {
-                className: 'sticky right-0 z-[1] bg-background px-2 py-1.5 text-right align-middle group-hover:bg-(--ui-bg-secondary)',
-                children: jsx(ActionButtons, { activity, busy, onAction, row, t })
-              })
-            ]
-          }, row.identifier))
-        })
-      ]
-    })
-  })
-}
-
 function PageHeader({ fetching, onRefresh, onUpdate, operating, summary, t, updating }) {
   return jsxs('header', {
     className: 'border-b border-(--ui-stroke-secondary) px-4 py-4',
@@ -1099,10 +1001,9 @@ function PageHeader({ fetching, onRefresh, onUpdate, operating, summary, t, upda
 
 function FilterPanel({
   categories, codexCount, counts, filters, hermesCount, missingCount,
-  onChange, onClear, onViewChange, optionalCount, rowCount, totalCount, visibleCount, t
+  onChange, onClear, onViewChange, rowCount, totalCount, visibleCount, t
 }) {
   const showingCodex = filters.view === 'codex'
-  const showingOptional = !showingCodex && filters.source === 'optional'
   const hasActiveFilters = Boolean(filters.query)
     || (!showingCodex && filters.category !== 'all')
     || (!showingCodex && (filters.source !== 'all' || filters.showMissingBuiltin))
@@ -1129,9 +1030,7 @@ function FilterPanel({
             size: 'sm',
             variant: filters.source === key ? 'default' : 'secondary',
             onClick: () => onChange('source', key),
-            children: `${t(`sources.${key}`)} ${
-              key === 'all' ? rowCount : key === 'optional' ? optionalCount : counts[key] || 0
-            }`
+            children: `${t(`sources.${key}`)} ${key === 'all' ? rowCount : counts[key] || 0}`
           }, key))
         }),
         jsx(Input, {
@@ -1151,7 +1050,7 @@ function FilterPanel({
             ...categories.map(value => jsx('option', { value, children: value }, value))
           ]
         }),
-        showingCodex || showingOptional ? null : jsxs('label', {
+        showingCodex ? null : jsxs('label', {
           className: 'flex min-h-8 shrink-0 items-center gap-2 text-sm',
           children: [
             jsx('input', {
@@ -1265,19 +1164,14 @@ function SkillManagePage() {
   const language = t('language') === 'zh' ? 'zh' : 'en'
   const view = useInventoryView(data, { ...filters, language }, filters.showMissingBuiltin, t)
   const showingCodex = filters.view === 'codex'
-  const showingOptional = !showingCodex && filters.source === 'optional'
   const diagnostics = asArray(data.diagnostics)
   const summary = {
     disabled: view.installed.filter(row => row.status === 'disabled').length,
     restorable: view.missing.length,
     diagnostics: diagnostics.length
   }
-  const visibleCount = showingCodex
-    ? view.codexVisible.length
-    : showingOptional ? view.optionalVisible.length : view.visible.length
-  const totalCount = showingCodex
-    ? view.codex.length
-    : showingOptional ? view.optional.length : view.rows.length
+  const visibleCount = showingCodex ? view.codexVisible.length : view.visible.length
+  const totalCount = showingCodex ? view.codex.length : view.rows.length
   const busy = mutation.isPending || pluginUpdate.isPending
   const changeFilter = (key, value) => setFilters(current => ({ ...current, [key]: value }))
   const clearFilters = () => setFilters(current => ({
@@ -1343,7 +1237,7 @@ function SkillManagePage() {
           }),
           jsx(Diagnostics, { rows: diagnostics, t }),
           jsx(FilterPanel, {
-            categories: showingOptional ? view.optionalCategories : view.categories,
+            categories: view.categories,
             codexCount: view.codex.length,
             counts: view.rowCounts,
             filters,
@@ -1358,7 +1252,6 @@ function SkillManagePage() {
               category: 'all',
               showMissingBuiltin: false
             })),
-            optionalCount: view.optional.length,
             rowCount: view.rows.length,
             totalCount,
             visibleCount,
@@ -1372,16 +1265,7 @@ function SkillManagePage() {
                 rows: view.codexVisible,
                 t
               })
-            : showingOptional
-              ? jsx(OptionalTable, {
-                  activity,
-                  busy,
-                  language,
-                  onAction: beginAction,
-                  rows: view.optionalVisible,
-                  t
-                })
-              : jsx(SkillTable, {
+            : jsx(SkillTable, {
                 activity,
                 busy,
                 language,

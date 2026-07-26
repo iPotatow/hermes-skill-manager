@@ -79,7 +79,3 @@ class SkillPaths:
     @property
     def builtin_catalog(self) -> Path:
         return Path(__file__).resolve().parents[1] / "data" / "builtin_catalog.json"
-
-    @property
-    def optional_catalog(self) -> Path:
-        return Path(__file__).resolve().parents[1] / "data" / "optional_catalog.json"

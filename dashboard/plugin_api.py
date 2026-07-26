@@ -55,9 +55,7 @@ class SkillAction(BaseModel):
     source: str = ""
     name: str = ""
     confirm: str = ""
-    category: str = ""  # retained for v1.x clients; resolution is server-owned
     relative_path: str = ""
-    identifier: str = ""
     force: bool = False
 
 
@@ -99,11 +97,6 @@ def restore_builtin(action: SkillAction) -> dict[str, Any]:
 @router.post("/update")
 def update_skill(action: SkillAction) -> dict[str, Any]:
     return _run(lambda: _manager().update(action.name))
-
-
-@router.post("/install-optional")
-def install_optional_skill(action: SkillAction) -> dict[str, Any]:
-    return _run(lambda: _manager().install_optional(action.identifier))
 
 
 @router.post("/plugin-update")
