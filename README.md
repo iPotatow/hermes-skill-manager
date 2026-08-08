@@ -2,16 +2,17 @@
 
 [English](README_EN.md) | 简体中文
 
-`skill-manager`（Skill Manager / 技能管理）是独立的 Hermes Desktop 原生插件，用于查看和维护内建、Skills Hub 与本地技能，并可管理 Codex 用户技能。它不包含 Hermes Dashboard 页面，也不依赖 Dashboard 插件仓库。
+`skill-manager`（Skill Manager / 技能管理）是独立的 Hermes Desktop 原生插件，用于查看和维护内建、Skills Hub、本地技能、千问办公技能，并可管理 Codex 用户技能。它不包含 Hermes Dashboard 页面，也不依赖 Dashboard 插件仓库。
 
-版本：`1.8.6`
+版本：`1.9.0`
 
 ## 功能
 
 - Desktop 侧边栏页面与 `⌘K` 命令入口
 - Dashboard 清单仅挂载后端 API，不注册 Dashboard 侧边栏
-- Hermes 与 Codex 技能均使用紧凑表格展示，不使用技能卡片
-- Hermes 与 Codex 使用一级分段视图；内建、社区、本地处于 Hermes 来源筛选的同一级
+- Hermes、千问办公与 Codex 技能均使用紧凑表格展示，不使用技能卡片
+- Hermes、千问办公与 Codex 使用一级分段视图；内建、社区、本地处于 Hermes 来源筛选的同一级
+- 千问办公视图读取 `~/.qwenworkcn/skills`，支持搜索、分类、详情和安全删除；删除要求输入完整技能名确认
 - GitHub Actions 每周同步 Hermes 官方内建技能中文文档；官方译文优先，缺失中文时会阻止错误快照提交
 - 搜索、来源和分类筛选支持响应式换行、全文搜索和一键清除
 - 内建技能中文简介取自 [Hermes 官方中文技能目录](https://hermes-agent.nousresearch.com/docs/zh-Hans/reference/skills-catalog)，跟随 Desktop 界面语言显示，后台定时刷新并保留离线快照
@@ -69,7 +70,7 @@ hermes plugins enable skill-manager
 ## 架构
 
 - `plugin.js` 按 Hermes Desktop 约束保持为单个未编译 ESM 文件，内部按策略函数、数据查询、动作编排和 UI 组件分层。
-- `plugin_api.py` 只负责 FastAPI 请求适配与错误转换；发现、路径、文件操作、运行时调用、状态和业务流程分别位于 `dashboard/skill_manager/`。
+- `plugin_api.py` 只负责 FastAPI 请求适配与错误转换；Hermes、千问办公和 Codex 的发现、路径、文件操作、运行时调用、状态和业务流程分别位于 `dashboard/skill_manager/`。
 - 每个 API 请求重新解析 Hermes profile 路径；状态写入和 Codex 同步分别使用进程级锁，避免并发请求丢失历史或互相覆盖。
 
 ## 目录
@@ -101,4 +102,4 @@ node --test tests/desktop_plugin_smoke.test.js
 python3 -m unittest discover -s tests -v
 ```
 
-插件 ID：`skill-manager` · Desktop 路径：`/skill-manager` · 版本：`1.8.6`
+插件 ID：`skill-manager` · Desktop 路径：`/skill-manager` · 版本：`1.9.0`

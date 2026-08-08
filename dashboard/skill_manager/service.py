@@ -68,6 +68,7 @@ class SkillManager:
         rows = self.inventory_reader.rows(diagnostics, {item[0] for item in bundled})
         missing = self.inventory_reader.missing_builtin_rows(rows, bundled)
         codex_rows = self.inventory_reader.codex_inventory(diagnostics)
+        qwenwork_rows = self.inventory_reader.qwenwork_inventory(diagnostics)
         state = self.state.load()
 
         counts: dict[str, int] = {}
@@ -96,11 +97,14 @@ class SkillManager:
             "history": state.get("history", [])[:5],
             "codexSkills": codex_rows,
             "codexSkillCount": len(codex_rows),
+            "qwenworkSkills": qwenwork_rows,
+            "qwenworkSkillCount": len(qwenwork_rows),
             "diagnostics": diagnostics,
             "meta": {
                 "home": str(self.paths.home),
                 "skillsDir": str(self.paths.skills),
                 "codexSkillsDir": str(self.paths.codex_skills),
+                "qwenworkSkillsDir": str(self.paths.qwenwork_skills),
                 "generatedAt": self.state.now(),
                 "partial": bool(diagnostics),
             },
@@ -194,6 +198,19 @@ class SkillManager:
                 raise SkillManagerError(404, "Codex 用户技能目录不存在")
             shutil.rmtree(target)
         self._record("delete-codex", row)
+        return {"ok": True, "skill": row}
+
+    def delete_qwenwork(self, name: str, relative_path: str, confirm: str) -> dict[str, Any]:
+        """Delete one QwenWork user skill after exact-name confirmation."""
+
+        self._confirm(confirm, name)
+        with self._sync_lock:
+            row = self.inventory_reader.find_qwenwork_user(relative_path, name)
+            target = self.inventory_reader.safe_qwenwork_relative_target(row["relativePath"])
+            if target.is_symlink() or not target.is_dir() or not (target / "SKILL.md").is_file():
+                raise SkillManagerError(404, "千问办公技能目录不存在")
+            shutil.rmtree(target)
+        self._record("delete-qwen", row)
         return {"ok": True, "skill": row}
 
     def sync_codex(

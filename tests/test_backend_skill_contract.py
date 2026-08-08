@@ -388,6 +388,56 @@ class BackendSkillContractTest(unittest.TestCase):
             self.assertEqual(runtime.clear_count, 0)
             self.assertEqual(state.events[0]["action"], "delete-codex")
 
+    def test_qwenwork_inventory_reads_frontmatter_and_deletes_only_confirmed_skill(self):
+        with tempfile.TemporaryDirectory() as directory:
+            paths = SkillPaths(qwenwork_home_override=Path(directory) / "qwenwork")
+            skill = paths.qwenwork_skills / "office" / "weekly-report"
+            skill.mkdir(parents=True)
+            (skill / "SKILL.md").write_text(
+                "---\nname: 周报助手\ndescription: 生成周报\ndescription_zh: 生成中文周报\n---\n",
+                encoding="utf-8",
+            )
+            (skill / "reference.md").write_text("template", encoding="utf-8")
+            (paths.qwenwork_skills / "not-a-skill").mkdir(parents=True)
+            (paths.qwenwork_skills / "not-a-skill" / "SKILL.md").write_text(
+                "This file has no QwenWork frontmatter.\n", encoding="utf-8"
+            )
+            rows = SkillInventory(paths).qwenwork_inventory([])
+
+            self.assertEqual(len(rows), 1)
+            self.assertEqual(rows[0]["name"], "周报助手")
+            self.assertEqual(rows[0]["kind"], "qwen")
+            self.assertEqual(rows[0]["source"], "qwenwork")
+            self.assertEqual(rows[0]["category"], "office")
+            self.assertEqual(rows[0]["relativePath"], "office/weekly-report")
+            self.assertEqual(rows[0]["availableActions"], ["delete-qwen"])
+
+            manager = SkillManager(paths=paths, state=StateStub(), runtime=RuntimeStub())
+            with self.assertRaises(SkillManagerError) as raised:
+                manager.delete_qwenwork("周报助手", "office/weekly-report", "wrong")
+            self.assertEqual(raised.exception.status_code, 400)
+            self.assertTrue(skill.exists())
+
+            result = manager.delete_qwenwork(
+                "周报助手", "office/weekly-report", "周报助手"
+            )
+            self.assertTrue(result["ok"])
+            self.assertFalse(skill.exists())
+
+    def test_qwenwork_delete_rejects_symlinked_skill_path(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            paths = SkillPaths(qwenwork_home_override=root / "qwenwork")
+            outside = root / "outside"
+            outside.mkdir()
+            (outside / "SKILL.md").write_text("---\nname: outside\n---\n", encoding="utf-8")
+            paths.qwenwork_skills.mkdir(parents=True)
+            (paths.qwenwork_skills / "linked").symlink_to(outside, target_is_directory=True)
+            rows = SkillInventory(paths).qwenwork_inventory([])
+            self.assertEqual(rows, [])
+            with self.assertRaises(SkillManagerError):
+                SkillInventory(paths).safe_qwenwork_relative_target("linked")
+
     def test_available_actions_are_explicit_and_source_accurate(self):
         actions = SkillInventory.available_actions
         self.assertEqual(actions({"kind": "builtin", "status": "enabled"}), ["reset", "delete"])
@@ -665,6 +715,9 @@ class BackendSkillContractTest(unittest.TestCase):
                 diagnostics.append({"component": "codex-skill", "message": "partial"})
                 return [{"name": "codex"}]
 
+            def qwenwork_inventory(self, diagnostics):
+                return [{"name": "qwen"}]
+
         paths = SkillPaths(
             home_override=Path("/hermes"),
             skills_override=Path("/hermes/skills"),
@@ -682,6 +735,7 @@ class BackendSkillContractTest(unittest.TestCase):
         self.assertEqual(result["disabledCount"], 1)
         self.assertEqual(result["missingBuiltinCount"], 1)
         self.assertEqual(result["codexSkillCount"], 1)
+        self.assertEqual(result["qwenworkSkillCount"], 1)
         self.assertNotIn("optionalSkills", result)
         self.assertTrue(result["meta"]["partial"])
         self.assertEqual(result["meta"]["skillsDir"], "/hermes/skills")
@@ -690,7 +744,7 @@ class BackendSkillContractTest(unittest.TestCase):
         module = load_backend()
         expected_routes = {
             "/inventory", "/delete", "/reset", "/restore", "/update",
-            "/plugin-update", "/delete-codex", "/sync-codex",
+            "/plugin-update", "/delete-codex", "/delete-qwen", "/sync-codex",
         }
         if hasattr(module.router, "routes"):
             self.assertEqual({route.path for route in module.router.routes}, expected_routes)
@@ -719,6 +773,7 @@ class BackendSkillContractTest(unittest.TestCase):
             "update_skill",
             "update_plugin",
             "delete_codex_skill",
+            "delete_qwen_skill",
             "sync_skill_to_codex",
         )
         for route in mutation_routes:

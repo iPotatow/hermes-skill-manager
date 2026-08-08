@@ -106,6 +106,71 @@ class SkillInventory:
             row["relativePath"],
         ))
 
+    def qwenwork_inventory(self, diagnostics: list[Diagnostic]) -> list[dict[str, Any]]:
+        """Return skills installed in the QwenWork user skills directory."""
+
+        root = self.paths.qwenwork_skills.expanduser()
+        if not root.exists():
+            return []
+        try:
+            resolved_root = root.resolve()
+        except OSError as exc:
+            diagnostics.append({
+                "component": "qwenwork-skills",
+                "message": str(exc) or exc.__class__.__name__,
+            })
+            return []
+
+        rows: list[dict[str, Any]] = []
+        for skill_md in sorted(root.rglob("SKILL.md")):
+            try:
+                if skill_md.is_symlink() or not skill_md.is_file():
+                    continue
+                resolved = skill_md.resolve()
+                if not resolved.is_relative_to(resolved_root):
+                    continue
+                relative_dir = resolved.parent.relative_to(resolved_root)
+                if not relative_dir.parts:
+                    continue
+                content = resolved.read_text(encoding="utf-8")
+                name = self._frontmatter_value(content, "name")
+                if not name:
+                    continue
+                description = self._frontmatter_value(content, "description")[:500]
+                description_zh = self._frontmatter_value(content, "description_zh")[:500]
+                category = str(Path(relative_dir).parent)
+                if category == ".":
+                    category = ""
+                rows.append({
+                    "name": name,
+                    "category": category,
+                    "kind": "qwen",
+                    "source": "qwenwork",
+                    "rawSource": "qwenwork",
+                    "trustLevel": "local",
+                    "status": "enabled",
+                    "installPath": relative_dir.as_posix(),
+                    "relativePath": relative_dir.as_posix(),
+                    "identifier": f"qwenwork/{relative_dir.as_posix()}",
+                    "description": description_zh or description,
+                    "descriptionZh": description_zh or description,
+                    "descriptionEn": description,
+                    "installedAt": "",
+                    "updatedAt": datetime.fromtimestamp(
+                        resolved.stat().st_mtime, timezone.utc
+                    ).isoformat(),
+                    "availableActions": self.available_actions({"kind": "qwen"}),
+                })
+            except Exception as exc:
+                diagnostics.append({
+                    "component": "qwenwork-skill",
+                    "message": str(exc) or exc.__class__.__name__,
+                })
+        return sorted(rows, key=lambda row: (
+            str(row["name"]).lower(),
+            row["relativePath"],
+        ))
+
     def hub_by_name(self, diagnostics: list[Diagnostic]) -> dict[str, dict[str, Any]]:
         def load() -> dict[str, dict[str, Any]]:
             from tools.skills_hub import HubLockFile
@@ -161,6 +226,7 @@ class SkillInventory:
             "builtin": ["reset", "delete"],
             "hub-installed": ["reset", "update", "delete"],
             "local": ["delete"],
+            "qwen": ["delete-qwen"],
         }.get(kind, [])
 
     def safe_target(self, relative_path: str) -> Path:
@@ -184,6 +250,13 @@ class SkillInventory:
             "Codex 技能路径不安全",
         )
 
+    def safe_qwenwork_relative_target(self, relative_path: str) -> Path:
+        return safe_descendant(
+            self.paths.qwenwork_skills,
+            relative_path,
+            "千问办公技能路径不安全",
+        )
+
     def find_codex_user(self, relative_path: str, name: str) -> dict[str, Any]:
         diagnostics: list[Diagnostic] = []
         for row in self.codex_inventory(diagnostics):
@@ -192,6 +265,15 @@ class SkillInventory:
         if diagnostics:
             raise self._discovery_error(diagnostics)
         raise SkillManagerError(404, f"未找到 Codex 用户技能：{name}")
+
+    def find_qwenwork_user(self, relative_path: str, name: str) -> dict[str, Any]:
+        diagnostics: list[Diagnostic] = []
+        for row in self.qwenwork_inventory(diagnostics):
+            if row["relativePath"] == relative_path and row["name"] == name:
+                return row
+        if diagnostics:
+            raise self._discovery_error(diagnostics)
+        raise SkillManagerError(404, f"未找到千问办公技能：{name}")
 
     def _description_from_disk(self, skill_dir: Path) -> str:
         try:

@@ -32,6 +32,13 @@ def resolve_codex_home() -> Path:
     return Path(configured).expanduser() if configured else Path.home() / ".codex"
 
 
+def resolve_qwenwork_home() -> Path:
+    """Resolve the active QwenWork user-data root."""
+
+    configured = os.environ.get("QWENWORK_HOME", "").strip()
+    return Path(configured).expanduser() if configured else Path.home() / ".qwenworkcn"
+
+
 @dataclass(frozen=True)
 class SkillPaths:
     """Resolve active-profile paths lazily; overrides keep tests hermetic."""
@@ -39,6 +46,7 @@ class SkillPaths:
     home_override: Path | None = None
     skills_override: Path | None = None
     codex_home_override: Path | None = None
+    qwenwork_home_override: Path | None = None
 
     @property
     def home(self) -> Path:
@@ -55,6 +63,18 @@ class SkillPaths:
     @property
     def codex_skills(self) -> Path:
         return self.codex_home / "skills"
+
+    @property
+    def qwenwork_home(self) -> Path:
+        return (
+            Path(self.qwenwork_home_override)
+            if self.qwenwork_home_override is not None
+            else resolve_qwenwork_home()
+        )
+
+    @property
+    def qwenwork_skills(self) -> Path:
+        return self.qwenwork_home / "skills"
 
     @property
     def plugin_root(self) -> Path:

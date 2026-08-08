@@ -2,16 +2,17 @@
 
 English | [简体中文](README.md)
 
-`skill-manager` (Skill Manager / 技能管理) is a standalone native Hermes Desktop plugin for inspecting and maintaining built-in, Skills Hub, and local skills, and for managing Codex user skills. It contains no Dashboard page and does not depend on the Dashboard plugin repository.
+`skill-manager` (Skill Manager / 技能管理) is a standalone native Hermes Desktop plugin for inspecting and maintaining built-in, Skills Hub, local, and QwenWork skills, and for managing Codex user skills. It contains no Dashboard page and does not depend on the Dashboard plugin repository.
 
-Version: `1.8.6`
+Version: `1.9.0`
 
 ## Features
 
 - Native Desktop sidebar page and `⌘K` command
 - The Dashboard manifest mounts backend APIs without adding a Dashboard sidebar item
-- Compact tables for Hermes and Codex skills, with no skill-card layout
-- Top-level Hermes/Codex segmented views; Built-in, Community, and Local share the Hermes source filter
+- Compact tables for Hermes, QwenWork, and Codex skills, with no skill-card layout
+- Top-level Hermes/QwenWork/Codex segmented views; Built-in, Community, and Local share the Hermes source filter
+- A QwenWork view backed by `~/.qwenworkcn/skills` with search, categories, details, and safe deletion requiring exact-name confirmation
 - A weekly GitHub Actions workflow synchronizes official Chinese docs for built-in skills; official translations win and missing Chinese blocks an invalid snapshot commit
 - Responsive, wrapping search and filters with full-text search and one-click reset
 - Built-in Chinese descriptions come from the [official Hermes Chinese skills catalog](https://hermes-agent.nousresearch.com/docs/zh-Hans/reference/skills-catalog), follow the Desktop UI language, and use background refresh with an offline snapshot
@@ -69,7 +70,7 @@ Then install the new Desktop entry with the commands above and restart the Herme
 ## Architecture
 
 - Hermes Desktop requires `plugin.js` to remain one uncompiled ESM file; internally it is layered into policy helpers, data queries, action orchestration, and small UI components.
-- `plugin_api.py` only adapts FastAPI requests and domain errors. Discovery, paths, filesystem operations, runtime calls, state, and use cases live independently under `dashboard/skill_manager/`.
+- `plugin_api.py` only adapts FastAPI requests and domain errors. Hermes, QwenWork, and Codex discovery, paths, filesystem operations, runtime calls, state, and use cases live independently under `dashboard/skill_manager/`.
 - Every API request resolves the active Hermes profile again. Process-wide locks protect history writes and Codex synchronization from concurrent requests.
 
 ## Layout
@@ -101,4 +102,4 @@ node --test tests/desktop_plugin_smoke.test.js
 python3 -m unittest discover -s tests -v
 ```
 
-Plugin ID: `skill-manager` · Desktop route: `/skill-manager` · Version: `1.8.6`
+Plugin ID: `skill-manager` · Desktop route: `/skill-manager` · Version: `1.9.0`

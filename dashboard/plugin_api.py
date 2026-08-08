@@ -113,6 +113,15 @@ def delete_codex_skill(action: SkillAction) -> dict[str, Any]:
     ))
 
 
+@router.post("/delete-qwen")
+def delete_qwen_skill(action: SkillAction) -> dict[str, Any]:
+    return _run(lambda: _manager().delete_qwenwork(
+        action.name,
+        action.relative_path,
+        action.confirm,
+    ))
+
+
 @router.post("/sync-codex")
 def sync_skill_to_codex(action: SkillAction) -> dict[str, Any]:
     return _run(lambda: _manager().sync_codex(
