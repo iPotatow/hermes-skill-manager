@@ -39,6 +39,23 @@ def resolve_qwenwork_home() -> Path:
     return Path(configured).expanduser() if configured else Path.home() / ".qwenworkcn"
 
 
+def resolve_qwenwork_builtin_skills() -> Path:
+    """Resolve QwenWork's bundled skills directory when it is discoverable."""
+
+    configured = os.environ.get("QWENWORK_RESOURCES", "").strip()
+    if configured:
+        return Path(configured).expanduser() / "skills"
+
+    candidates = (
+        Path("/Applications/QwenWorkCN.app/Contents/Resources/skills"),
+        Path.home() / "Applications/QwenWorkCN.app/Contents/Resources/skills",
+    )
+    for candidate in candidates:
+        if candidate.is_dir():
+            return candidate
+    return candidates[0]
+
+
 @dataclass(frozen=True)
 class SkillPaths:
     """Resolve active-profile paths lazily; overrides keep tests hermetic."""
@@ -47,6 +64,7 @@ class SkillPaths:
     skills_override: Path | None = None
     codex_home_override: Path | None = None
     qwenwork_home_override: Path | None = None
+    qwenwork_builtin_skills_override: Path | None = None
 
     @property
     def home(self) -> Path:
@@ -75,6 +93,14 @@ class SkillPaths:
     @property
     def qwenwork_skills(self) -> Path:
         return self.qwenwork_home / "skills"
+
+    @property
+    def qwenwork_builtin_skills(self) -> Path:
+        return (
+            Path(self.qwenwork_builtin_skills_override)
+            if self.qwenwork_builtin_skills_override is not None
+            else resolve_qwenwork_builtin_skills()
+        )
 
     @property
     def plugin_root(self) -> Path:

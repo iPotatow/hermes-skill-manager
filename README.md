@@ -4,7 +4,7 @@
 
 `skill-manager`（Skill Manager / 技能管理）是独立的 Hermes Desktop 原生插件，用于查看和维护内建、Skills Hub、本地技能、千问办公技能，并可管理 Codex 用户技能。它不包含 Hermes Dashboard 页面，也不依赖 Dashboard 插件仓库。
 
-版本：`1.9.0`
+版本：`1.9.1`
 
 ## 功能
 
@@ -12,7 +12,7 @@
 - Dashboard 清单仅挂载后端 API，不注册 Dashboard 侧边栏
 - Hermes、千问办公与 Codex 技能均使用紧凑表格展示，不使用技能卡片
 - Hermes、千问办公与 Codex 使用一级分段视图；内建、社区、本地处于 Hermes 来源筛选的同一级
-- 千问办公视图读取 `~/.qwenworkcn/skills`，支持搜索、分类、详情和安全删除；删除要求输入完整技能名确认
+- 千问办公视图读取 `~/.qwenworkcn/skills`，自动剔除 QwenWork 安装包内建技能，仅展示可管理的自定义/导入技能；支持搜索、分类、详情和安全删除，删除要求输入完整技能名确认
 - GitHub Actions 每周同步 Hermes 官方内建技能中文文档；官方译文优先，缺失中文时会阻止错误快照提交
 - 搜索、来源和分类筛选支持响应式换行、全文搜索和一键清除
 - 内建技能中文简介取自 [Hermes 官方中文技能目录](https://hermes-agent.nousresearch.com/docs/zh-Hans/reference/skills-catalog)，跟随 Desktop 界面语言显示，后台定时刷新并保留离线快照
@@ -102,4 +102,4 @@ node --test tests/desktop_plugin_smoke.test.js
 python3 -m unittest discover -s tests -v
 ```
 
-插件 ID：`skill-manager` · Desktop 路径：`/skill-manager` · 版本：`1.9.0`
+插件 ID：`skill-manager` · Desktop 路径：`/skill-manager` · 版本：`1.9.1`

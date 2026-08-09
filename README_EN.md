@@ -4,7 +4,7 @@ English | [简体中文](README.md)
 
 `skill-manager` (Skill Manager / 技能管理) is a standalone native Hermes Desktop plugin for inspecting and maintaining built-in, Skills Hub, local, and QwenWork skills, and for managing Codex user skills. It contains no Dashboard page and does not depend on the Dashboard plugin repository.
 
-Version: `1.9.0`
+Version: `1.9.1`
 
 ## Features
 
@@ -12,7 +12,7 @@ Version: `1.9.0`
 - The Dashboard manifest mounts backend APIs without adding a Dashboard sidebar item
 - Compact tables for Hermes, QwenWork, and Codex skills, with no skill-card layout
 - Top-level Hermes/QwenWork/Codex segmented views; Built-in, Community, and Local share the Hermes source filter
-- A QwenWork view backed by `~/.qwenworkcn/skills` with search, categories, details, and safe deletion requiring exact-name confirmation
+- A QwenWork view backed by `~/.qwenworkcn/skills` that excludes skills bundled in the QwenWork app and shows manageable custom/imported skills with search, categories, details, and safe deletion requiring exact-name confirmation
 - A weekly GitHub Actions workflow synchronizes official Chinese docs for built-in skills; official translations win and missing Chinese blocks an invalid snapshot commit
 - Responsive, wrapping search and filters with full-text search and one-click reset
 - Built-in Chinese descriptions come from the [official Hermes Chinese skills catalog](https://hermes-agent.nousresearch.com/docs/zh-Hans/reference/skills-catalog), follow the Desktop UI language, and use background refresh with an offline snapshot
@@ -102,4 +102,4 @@ node --test tests/desktop_plugin_smoke.test.js
 python3 -m unittest discover -s tests -v
 ```
 
-Plugin ID: `skill-manager` · Desktop route: `/skill-manager` · Version: `1.9.0`
+Plugin ID: `skill-manager` · Desktop route: `/skill-manager` · Version: `1.9.1`

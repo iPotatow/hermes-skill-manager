@@ -112,6 +112,7 @@ class SkillInventory:
         root = self.paths.qwenwork_skills.expanduser()
         if not root.exists():
             return []
+        builtin_paths = self.qwenwork_builtin_paths()
         try:
             resolved_root = root.resolve()
         except OSError as exc:
@@ -131,6 +132,8 @@ class SkillInventory:
                     continue
                 relative_dir = resolved.parent.relative_to(resolved_root)
                 if not relative_dir.parts:
+                    continue
+                if relative_dir.as_posix() in builtin_paths:
                     continue
                 content = resolved.read_text(encoding="utf-8")
                 name = self._frontmatter_value(content, "name")
@@ -170,6 +173,24 @@ class SkillInventory:
             str(row["name"]).lower(),
             row["relativePath"],
         ))
+
+    def qwenwork_builtin_paths(self) -> set[str]:
+        """Return relative skill directories shipped with the QwenWork app."""
+
+        root = self.paths.qwenwork_builtin_skills.expanduser()
+        if not root.is_dir():
+            return set()
+        paths: set[str] = set()
+        for skill_md in root.rglob("SKILL.md"):
+            try:
+                if skill_md.is_symlink() or not skill_md.is_file():
+                    continue
+                content = skill_md.read_text(encoding="utf-8")
+                if self._frontmatter_value(content, "name"):
+                    paths.add(skill_md.parent.relative_to(root).as_posix())
+            except Exception:
+                continue
+        return paths
 
     def hub_by_name(self, diagnostics: list[Diagnostic]) -> dict[str, dict[str, Any]]:
         def load() -> dict[str, dict[str, Any]]:

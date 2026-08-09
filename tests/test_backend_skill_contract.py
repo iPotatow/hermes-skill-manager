@@ -390,7 +390,10 @@ class BackendSkillContractTest(unittest.TestCase):
 
     def test_qwenwork_inventory_reads_frontmatter_and_deletes_only_confirmed_skill(self):
         with tempfile.TemporaryDirectory() as directory:
-            paths = SkillPaths(qwenwork_home_override=Path(directory) / "qwenwork")
+            paths = SkillPaths(
+                qwenwork_home_override=Path(directory) / "qwenwork",
+                qwenwork_builtin_skills_override=Path(directory) / "bundled-skills",
+            )
             skill = paths.qwenwork_skills / "office" / "weekly-report"
             skill.mkdir(parents=True)
             (skill / "SKILL.md").write_text(
@@ -402,6 +405,16 @@ class BackendSkillContractTest(unittest.TestCase):
             (paths.qwenwork_skills / "not-a-skill" / "SKILL.md").write_text(
                 "This file has no QwenWork frontmatter.\n", encoding="utf-8"
             )
+            builtin = paths.qwenwork_skills / "docx"
+            builtin.mkdir(parents=True)
+            (builtin / "SKILL.md").write_text(
+                "---\nname: docx\ndescription: Built-in\n---\n", encoding="utf-8"
+            )
+            bundled = paths.qwenwork_builtin_skills / "docx"
+            bundled.mkdir(parents=True)
+            (bundled / "SKILL.md").write_text(
+                "---\nname: docx\ndescription: Built-in\n---\n", encoding="utf-8"
+            )
             rows = SkillInventory(paths).qwenwork_inventory([])
 
             self.assertEqual(len(rows), 1)
@@ -411,6 +424,7 @@ class BackendSkillContractTest(unittest.TestCase):
             self.assertEqual(rows[0]["category"], "office")
             self.assertEqual(rows[0]["relativePath"], "office/weekly-report")
             self.assertEqual(rows[0]["availableActions"], ["delete-qwen"])
+            self.assertNotIn("docx", {row["name"] for row in rows})
 
             manager = SkillManager(paths=paths, state=StateStub(), runtime=RuntimeStub())
             with self.assertRaises(SkillManagerError) as raised:
