@@ -1,8 +1,8 @@
 {
   "name": "skill-manager",
   "label": "Skill Manager Backend",
-  "description": "Backend API for managing Hermes, QwenWork, and Codex skills.",
-  "version": "1.9.1",
+  "description": "Backend API for managing Hermes, QwenWork, WorkBuddy, and Codex skills.",
+  "version": "1.10.0",
   "tab": {
     "hidden": true
   },

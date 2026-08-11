@@ -192,6 +192,97 @@ class SkillInventory:
                 continue
         return paths
 
+    def workbuddy_inventory(self, diagnostics: list[Diagnostic]) -> list[dict[str, Any]]:
+        """Return manageable skills from WorkBuddy's user skills directory."""
+
+        root = self.paths.workbuddy_skills.expanduser()
+        if not root.exists():
+            return []
+        builtin_paths, builtin_names = self.workbuddy_builtin_identifiers()
+        try:
+            resolved_root = root.resolve()
+        except OSError as exc:
+            diagnostics.append({
+                "component": "workbuddy-skills",
+                "message": str(exc) or exc.__class__.__name__,
+            })
+            return []
+
+        rows: list[dict[str, Any]] = []
+        for skill_md in sorted(root.rglob("SKILL.md")):
+            try:
+                if skill_md.is_symlink() or not skill_md.is_file():
+                    continue
+                resolved = skill_md.resolve()
+                if not resolved.is_relative_to(resolved_root):
+                    continue
+                relative_dir = resolved.parent.relative_to(resolved_root)
+                if not relative_dir.parts:
+                    continue
+                content = resolved.read_text(encoding="utf-8")
+                name = self._frontmatter_value(content, "name")
+                if not name:
+                    continue
+                relative_path = relative_dir.as_posix()
+                if relative_path in builtin_paths or name in builtin_names:
+                    continue
+                description = self._frontmatter_value(content, "description")[:500]
+                description_zh = self._frontmatter_value(content, "description_zh")[:500]
+                category = str(Path(relative_dir).parent)
+                if category == ".":
+                    category = ""
+                rows.append({
+                    "name": name,
+                    "category": category,
+                    "kind": "workbuddy",
+                    "source": "workbuddy",
+                    "rawSource": "workbuddy",
+                    "trustLevel": "local",
+                    "status": "enabled",
+                    "installPath": relative_path,
+                    "relativePath": relative_path,
+                    "identifier": f"workbuddy/{relative_path}",
+                    "description": description_zh or description,
+                    "descriptionZh": description_zh or description,
+                    "descriptionEn": description,
+                    "installedAt": "",
+                    "updatedAt": datetime.fromtimestamp(
+                        resolved.stat().st_mtime, timezone.utc
+                    ).isoformat(),
+                    "availableActions": self.available_actions({"kind": "workbuddy"}),
+                })
+            except Exception as exc:
+                diagnostics.append({
+                    "component": "workbuddy-skill",
+                    "message": str(exc) or exc.__class__.__name__,
+                })
+        return sorted(rows, key=lambda row: (
+            str(row["name"]).lower(),
+            row["relativePath"],
+        ))
+
+    def workbuddy_builtin_identifiers(self) -> tuple[set[str], set[str]]:
+        """Return bundled WorkBuddy skill paths and names for safe filtering."""
+
+        root = self.paths.workbuddy_builtin_skills.expanduser()
+        if not root.is_dir():
+            return set(), set()
+        paths: set[str] = set()
+        names: set[str] = set()
+        for skill_md in root.rglob("SKILL.md"):
+            try:
+                if skill_md.is_symlink() or not skill_md.is_file():
+                    continue
+                content = skill_md.read_text(encoding="utf-8")
+                name = self._frontmatter_value(content, "name")
+                if not name:
+                    continue
+                paths.add(skill_md.parent.relative_to(root).as_posix())
+                names.add(name)
+            except Exception:
+                continue
+        return paths, names
+
     def hub_by_name(self, diagnostics: list[Diagnostic]) -> dict[str, dict[str, Any]]:
         def load() -> dict[str, dict[str, Any]]:
             from tools.skills_hub import HubLockFile
@@ -248,6 +339,7 @@ class SkillInventory:
             "hub-installed": ["reset", "update", "delete"],
             "local": ["delete"],
             "qwen": ["delete-qwen"],
+            "workbuddy": ["delete-workbuddy"],
         }.get(kind, [])
 
     def safe_target(self, relative_path: str) -> Path:
@@ -278,6 +370,13 @@ class SkillInventory:
             "千问办公技能路径不安全",
         )
 
+    def safe_workbuddy_relative_target(self, relative_path: str) -> Path:
+        return safe_descendant(
+            self.paths.workbuddy_skills,
+            relative_path,
+            "WorkBuddy 技能路径不安全",
+        )
+
     def find_codex_user(self, relative_path: str, name: str) -> dict[str, Any]:
         diagnostics: list[Diagnostic] = []
         for row in self.codex_inventory(diagnostics):
@@ -295,6 +394,15 @@ class SkillInventory:
         if diagnostics:
             raise self._discovery_error(diagnostics)
         raise SkillManagerError(404, f"未找到千问办公技能：{name}")
+
+    def find_workbuddy_user(self, relative_path: str, name: str) -> dict[str, Any]:
+        diagnostics: list[Diagnostic] = []
+        for row in self.workbuddy_inventory(diagnostics):
+            if row["relativePath"] == relative_path and row["name"] == name:
+                return row
+        if diagnostics:
+            raise self._discovery_error(diagnostics)
+        raise SkillManagerError(404, f"未找到 WorkBuddy 技能：{name}")
 
     def _description_from_disk(self, skill_dir: Path) -> str:
         try:

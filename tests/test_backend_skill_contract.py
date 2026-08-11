@@ -452,11 +452,78 @@ class BackendSkillContractTest(unittest.TestCase):
             with self.assertRaises(SkillManagerError):
                 SkillInventory(paths).safe_qwenwork_relative_target("linked")
 
+    def test_workbuddy_inventory_reads_frontmatter_and_deletes_only_non_builtin_skill(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            paths = SkillPaths(
+                workbuddy_home_override=root / "workbuddy",
+                workbuddy_builtin_skills_override=root / "bundled-skills",
+            )
+            skill = paths.workbuddy_skills / "office" / "weekly-report"
+            skill.mkdir(parents=True)
+            (skill / "SKILL.md").write_text(
+                "---\nname: WorkBuddy 周报\ndescription: 生成周报\n"
+                "description_zh: 生成中文周报\n---\n",
+                encoding="utf-8",
+            )
+            builtin = paths.workbuddy_skills / "docx"
+            builtin.mkdir(parents=True)
+            (builtin / "SKILL.md").write_text(
+                "---\nname: docx\ndescription: Built-in\n---\n",
+                encoding="utf-8",
+            )
+            bundled = paths.workbuddy_builtin_skills / "docx"
+            bundled.mkdir(parents=True)
+            (bundled / "SKILL.md").write_text(
+                "---\nname: docx\ndescription: Built-in\n---\n",
+                encoding="utf-8",
+            )
+
+            rows = SkillInventory(paths).workbuddy_inventory([])
+
+            self.assertEqual(len(rows), 1)
+            self.assertEqual(rows[0]["name"], "WorkBuddy 周报")
+            self.assertEqual(rows[0]["kind"], "workbuddy")
+            self.assertEqual(rows[0]["source"], "workbuddy")
+            self.assertEqual(rows[0]["category"], "office")
+            self.assertEqual(rows[0]["relativePath"], "office/weekly-report")
+            self.assertEqual(rows[0]["availableActions"], ["delete-workbuddy"])
+            self.assertNotIn("docx", {row["name"] for row in rows})
+
+            manager = SkillManager(paths=paths, state=StateStub(), runtime=RuntimeStub())
+            with self.assertRaises(SkillManagerError) as raised:
+                manager.delete_workbuddy("WorkBuddy 周报", "office/weekly-report", "wrong")
+            self.assertEqual(raised.exception.status_code, 400)
+            self.assertTrue(skill.exists())
+
+            result = manager.delete_workbuddy(
+                "WorkBuddy 周报", "office/weekly-report", "WorkBuddy 周报"
+            )
+            self.assertTrue(result["ok"])
+            self.assertFalse(skill.exists())
+
+    def test_workbuddy_delete_rejects_symlinked_skill_path(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            paths = SkillPaths(workbuddy_home_override=root / "workbuddy")
+            outside = root / "outside"
+            outside.mkdir()
+            (outside / "SKILL.md").write_text(
+                "---\nname: outside\n---\n", encoding="utf-8"
+            )
+            paths.workbuddy_skills.mkdir(parents=True)
+            (paths.workbuddy_skills / "linked").symlink_to(outside, target_is_directory=True)
+            rows = SkillInventory(paths).workbuddy_inventory([])
+            self.assertEqual(rows, [])
+            with self.assertRaises(SkillManagerError):
+                SkillInventory(paths).safe_workbuddy_relative_target("linked")
+
     def test_available_actions_are_explicit_and_source_accurate(self):
         actions = SkillInventory.available_actions
         self.assertEqual(actions({"kind": "builtin", "status": "enabled"}), ["reset", "delete"])
         self.assertEqual(actions({"kind": "hub-installed", "status": "enabled"}), ["reset", "update", "delete"])
         self.assertEqual(actions({"kind": "local", "status": "enabled"}), ["delete"])
+        self.assertEqual(actions({"kind": "workbuddy", "status": "enabled"}), ["delete-workbuddy"])
         self.assertEqual(actions({"kind": "builtin", "status": "deleted"}), ["restore"])
 
     def test_builtin_rows_report_codex_sync_status(self):
@@ -732,6 +799,9 @@ class BackendSkillContractTest(unittest.TestCase):
             def qwenwork_inventory(self, diagnostics):
                 return [{"name": "qwen"}]
 
+            def workbuddy_inventory(self, diagnostics):
+                return [{"name": "workbuddy"}]
+
         paths = SkillPaths(
             home_override=Path("/hermes"),
             skills_override=Path("/hermes/skills"),
@@ -750,6 +820,7 @@ class BackendSkillContractTest(unittest.TestCase):
         self.assertEqual(result["missingBuiltinCount"], 1)
         self.assertEqual(result["codexSkillCount"], 1)
         self.assertEqual(result["qwenworkSkillCount"], 1)
+        self.assertEqual(result["workbuddySkillCount"], 1)
         self.assertNotIn("optionalSkills", result)
         self.assertTrue(result["meta"]["partial"])
         self.assertEqual(result["meta"]["skillsDir"], "/hermes/skills")
@@ -758,7 +829,8 @@ class BackendSkillContractTest(unittest.TestCase):
         module = load_backend()
         expected_routes = {
             "/inventory", "/delete", "/reset", "/restore", "/update",
-            "/plugin-update", "/delete-codex", "/delete-qwen", "/sync-codex",
+            "/plugin-update", "/delete-codex", "/delete-qwen", "/delete-workbuddy",
+            "/sync-codex",
         }
         if hasattr(module.router, "routes"):
             self.assertEqual({route.path for route in module.router.routes}, expected_routes)
@@ -788,6 +860,7 @@ class BackendSkillContractTest(unittest.TestCase):
             "update_plugin",
             "delete_codex_skill",
             "delete_qwen_skill",
+            "delete_workbuddy_skill",
             "sync_skill_to_codex",
         )
         for route in mutation_routes:

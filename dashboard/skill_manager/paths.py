@@ -56,6 +56,46 @@ def resolve_qwenwork_builtin_skills() -> Path:
     return candidates[0]
 
 
+def resolve_workbuddy_home() -> Path:
+    """Resolve the active WorkBuddy user-data root."""
+
+    configured = os.environ.get("WORKBUDDY_HOME", "").strip()
+    return Path(configured).expanduser() if configured else Path.home() / ".workbuddy"
+
+
+def resolve_workbuddy_builtin_skills() -> Path:
+    """Resolve WorkBuddy's bundled skills directory when it is discoverable."""
+
+    configured = os.environ.get("WORKBUDDY_BUILTIN_SKILLS", "").strip()
+    if configured:
+        return Path(configured).expanduser()
+
+    resources = os.environ.get("WORKBUDDY_RESOURCES", "").strip()
+    if resources:
+        return Path(resources).expanduser() / "builtin-skills"
+
+    candidates = (
+        Path(
+            "/Applications/WorkBuddy.app/Contents/Resources/"
+            "app.asar.unpacked/resources/builtin-skills"
+        ),
+        Path.home()
+        / "Applications/WorkBuddy.app/Contents/Resources/"
+        / "app.asar.unpacked/resources/builtin-skills",
+        Path(
+            "/Applications/CodeBuddy.app/Contents/Resources/"
+            "app.asar.unpacked/resources/builtin-skills"
+        ),
+        Path.home()
+        / "Applications/CodeBuddy.app/Contents/Resources/"
+        / "app.asar.unpacked/resources/builtin-skills",
+    )
+    for candidate in candidates:
+        if candidate.is_dir():
+            return candidate
+    return candidates[0]
+
+
 @dataclass(frozen=True)
 class SkillPaths:
     """Resolve active-profile paths lazily; overrides keep tests hermetic."""
@@ -65,6 +105,8 @@ class SkillPaths:
     codex_home_override: Path | None = None
     qwenwork_home_override: Path | None = None
     qwenwork_builtin_skills_override: Path | None = None
+    workbuddy_home_override: Path | None = None
+    workbuddy_builtin_skills_override: Path | None = None
 
     @property
     def home(self) -> Path:
@@ -100,6 +142,26 @@ class SkillPaths:
             Path(self.qwenwork_builtin_skills_override)
             if self.qwenwork_builtin_skills_override is not None
             else resolve_qwenwork_builtin_skills()
+        )
+
+    @property
+    def workbuddy_home(self) -> Path:
+        return (
+            Path(self.workbuddy_home_override)
+            if self.workbuddy_home_override is not None
+            else resolve_workbuddy_home()
+        )
+
+    @property
+    def workbuddy_skills(self) -> Path:
+        return self.workbuddy_home / "skills"
+
+    @property
+    def workbuddy_builtin_skills(self) -> Path:
+        return (
+            Path(self.workbuddy_builtin_skills_override)
+            if self.workbuddy_builtin_skills_override is not None
+            else resolve_workbuddy_builtin_skills()
         )
 
     @property

@@ -15,9 +15,11 @@ const REFRESH_INTERVAL_MS = 15000
 // Hub mutations can download content and run a security scan. Hermes Desktop's
 // generic 15s REST timeout is too short for that workflow.
 const HUB_MUTATION_TIMEOUT_MS = 300000
-const VIEWS = ['hermes', 'codex', 'qwen']
+const VIEWS = ['hermes', 'codex', 'qwen', 'workbuddy']
 const SOURCES = ['all', 'builtin', 'hub-installed', 'local']
-const CONFIRMED_ACTIONS = new Set(['delete', 'delete-codex', 'delete-qwen', 'reset'])
+const CONFIRMED_ACTIONS = new Set([
+  'delete', 'delete-codex', 'delete-qwen', 'delete-workbuddy', 'reset'
+])
 const TONE_CLASSES = {
   enabled: 'text-foreground border-(--ui-stroke-primary)',
   disabled: 'text-(--ui-text-tertiary) border-(--ui-stroke-secondary)',
@@ -27,6 +29,7 @@ const TONE_CLASSES = {
   local: 'text-(--ui-text-secondary) border-(--ui-stroke-secondary)',
   installed: 'text-(--ui-accent) border-(--ui-accent)',
   qwen: 'text-(--ui-accent) border-(--ui-accent)',
+  workbuddy: 'text-(--ui-accent) border-(--ui-accent)',
   missing: 'text-(--ui-text-tertiary) border-(--ui-stroke-secondary)'
 }
 
@@ -34,7 +37,7 @@ const MESSAGES = {
   en: {
     language: 'en',
     title: 'Skill Manager',
-    subtitle: 'Manage Hermes, QwenWork, and Codex skills.',
+    subtitle: 'Manage Hermes, QwenWork, WorkBuddy, and Codex skills.',
     search: 'Search',
     searchPlaceholder: 'Search skills, descriptions, or sources',
     refresh: 'Refresh',
@@ -83,11 +86,14 @@ const MESSAGES = {
     },
     nav: 'Skill Manager',
     open: 'Open Skill Manager',
-    views: { hermes: 'Hermes skills', codex: 'Codex skills', qwen: 'QwenWork skills' },
+    views: {
+      hermes: 'Hermes skills', codex: 'Codex skills', qwen: 'QwenWork skills',
+      workbuddy: 'WorkBuddy skills'
+    },
     stats: { disabled: 'Disabled', restorable: 'Restorable', diagnostics: 'Diagnostics' },
     sources: {
       all: 'All', builtin: 'Built-in', 'hub-installed': 'Community',
-      local: 'Local', codex: 'Codex', qwen: 'QwenWork'
+      local: 'Local', codex: 'Codex', qwen: 'QwenWork', workbuddy: 'WorkBuddy'
     },
     statuses: { all: 'All statuses', enabled: 'Enabled', disabled: 'Disabled', deleted: 'Deleted' },
     trust: { builtin: 'Built-in', official: 'Official', community: 'Community', local: 'Local' },
@@ -108,17 +114,20 @@ const MESSAGES = {
     actions: {
       delete: 'Delete', reset: 'Reset', update: 'Update', restore: 'Restore',
       'sync-codex': 'Sync', 'delete-codex': 'Delete', 'delete-qwen': 'Delete',
+      'delete-workbuddy': 'Delete',
       'plugin-update': 'Plugin update'
     },
     detailGroups: { overview: 'Overview', location: 'Source' },
     confirmTitle: {
       delete: 'Delete skill', 'delete-codex': 'Delete Codex skill', 'delete-qwen': 'Delete QwenWork skill',
+      'delete-workbuddy': 'Delete WorkBuddy skill',
       reset: 'Reset skill', 'sync-codex': 'Replace Codex skill'
     },
     confirmBody: {
       delete: name => `This permanently removes the local files for ${name}. Type the exact skill name to continue.`,
       'delete-codex': name => `This permanently removes the Codex user skill ${name}. Type the exact skill name to continue.`,
       'delete-qwen': name => `This permanently removes the QwenWork skill ${name}. Type the exact skill name to continue.`,
+      'delete-workbuddy': name => `This permanently removes the WorkBuddy skill ${name}. Type the exact skill name to continue.`,
       reset: name => `This replaces the local contents of ${name} with its source version. Type the exact skill name to continue.`,
       'sync-codex': name => `Codex already has ${name}. Type the exact skill name to replace it with the Hermes copy.`
     }
@@ -126,7 +135,7 @@ const MESSAGES = {
   zh: {
     language: 'zh',
     title: '技能管理',
-    subtitle: '管理 Hermes、千问办公和 Codex 技能。',
+    subtitle: '管理 Hermes、千问办公、WorkBuddy 和 Codex 技能。',
     search: '搜索',
     searchPlaceholder: '搜索技能、简介或来源',
     refresh: '刷新',
@@ -175,11 +184,14 @@ const MESSAGES = {
     },
     nav: '技能管理',
     open: '打开技能管理',
-    views: { hermes: 'Hermes 技能', codex: 'Codex 技能', qwen: '千问办公技能' },
+    views: {
+      hermes: 'Hermes 技能', codex: 'Codex 技能', qwen: '千问办公技能',
+      workbuddy: 'WorkBuddy 技能'
+    },
     stats: { disabled: '已停用', restorable: '可恢复', diagnostics: '诊断' },
     sources: {
       all: '全部', builtin: '内建', 'hub-installed': '社区',
-      local: '本地', codex: 'Codex', qwen: '千问办公', qwenwork: '千问办公'
+      local: '本地', codex: 'Codex', qwen: '千问办公', qwenwork: '千问办公', workbuddy: 'WorkBuddy'
     },
     statuses: { all: '全部状态', enabled: '启用', disabled: '停用', deleted: '已删除' },
     trust: { builtin: '内建', official: '官方', community: '社区', local: '本地' },
@@ -200,17 +212,20 @@ const MESSAGES = {
     actions: {
       delete: '删除', reset: '重置', update: '更新', restore: '恢复',
       'sync-codex': '同步', 'delete-codex': '删除', 'delete-qwen': '删除',
+      'delete-workbuddy': '删除',
       'plugin-update': '插件更新'
     },
     detailGroups: { overview: '基本信息', location: '来源信息' },
     confirmTitle: {
       delete: '删除技能', 'delete-codex': '删除 Codex 技能', 'delete-qwen': '删除千问办公技能',
+      'delete-workbuddy': '删除 WorkBuddy 技能',
       reset: '重置技能', 'sync-codex': '覆盖 Codex 技能'
     },
     confirmBody: {
       delete: name => `这会永久删除 ${name} 的本地文件。请输入完整技能名继续。`,
       'delete-codex': name => `这会永久删除 Codex 用户技能 ${name}。请输入完整技能名继续。`,
       'delete-qwen': name => `这会永久删除千问办公技能 ${name} 的本地文件。请输入完整技能名继续。`,
+      'delete-workbuddy': name => `这会永久删除 WorkBuddy 技能 ${name} 的本地文件。请输入完整技能名继续。`,
       reset: name => `这会用来源版本覆盖 ${name} 的本地内容。请输入完整技能名继续。`,
       'sync-codex': name => `Codex 中已存在 ${name}。请输入完整技能名，用 Hermes 副本覆盖它。`
     }
@@ -231,7 +246,9 @@ const actionsOf = row => Array.from(new Set([
 const descriptionOf = (row, language) => language === 'zh'
   ? row.descriptionZh || row.description || row.descriptionEn || ''
   : row.descriptionEn || row.description || row.descriptionZh || ''
-const actionVariant = action => ['delete', 'delete-codex', 'delete-qwen'].includes(action)
+const actionVariant = action => [
+  'delete', 'delete-codex', 'delete-qwen', 'delete-workbuddy'
+].includes(action)
   ? 'destructive'
   : action === 'sync-codex' ? 'default' : 'secondary'
 const requiresConfirmation = (row, action) => CONFIRMED_ACTIONS.has(action)
@@ -320,7 +337,7 @@ function mutationBody(action, row, confirm) {
   return {
     source: sourceOf(row),
     name: row.name,
-    ...(['delete-codex', 'delete-qwen'].includes(action)
+    ...(['delete-codex', 'delete-qwen', 'delete-workbuddy'].includes(action)
       ? { relative_path: row.relativePath }
       : {}),
     ...(confirm ? { confirm } : {}),
@@ -372,6 +389,7 @@ function useInventoryView(data, filters, showMissingBuiltin, t) {
   const missing = asArray(data.missingBuiltinSkills)
   const codex = asArray(data.codexSkills)
   const qwen = asArray(data.qwenworkSkills)
+  const workbuddy = asArray(data.workbuddySkills)
   const linkedCodex = useMemo(() => linkCodexToHermes(codex, installed), [codex, installed])
   const rows = showMissingBuiltin ? installed.concat(missing) : installed
   const categories = useMemo(
@@ -381,6 +399,10 @@ function useInventoryView(data, filters, showMissingBuiltin, t) {
   const qwenCategories = useMemo(
     () => Array.from(new Set(qwen.map(row => row.category || t('root')))).sort(),
     [qwen, t]
+  )
+  const workbuddyCategories = useMemo(
+    () => Array.from(new Set(workbuddy.map(row => row.category || t('root')))).sort(),
+    [workbuddy, t]
   )
   const rowCounts = useMemo(() => countSources(rows), [rows])
   const visible = useMemo(
@@ -395,9 +417,14 @@ function useInventoryView(data, filters, showMissingBuiltin, t) {
     () => filterRows(qwen, { ...filters, t }),
     [qwen, filters.query, filters.category, filters.source, filters.language, t]
   )
+  const workbuddyVisible = useMemo(
+    () => filterRows(workbuddy, { ...filters, t }),
+    [workbuddy, filters.query, filters.category, filters.source, filters.language, t]
+  )
   return {
     categories, qwenCategories, codex: linkedCodex, codexVisible, installed, missing,
-    qwen, qwenVisible, rowCounts, rows, visible
+    qwen, qwenVisible, workbuddy, workbuddyCategories, workbuddyVisible,
+    rowCounts, rows, visible
   }
 }
 
@@ -1015,15 +1042,21 @@ function PageHeader({ fetching, onRefresh, onUpdate, operating, summary, t, upda
 
 function FilterPanel({
   categories, codexCount, counts, filters, hermesCount, missingCount, qwenCount,
-  onChange, onClear, onViewChange, rowCount, totalCount, visibleCount, t
+  workbuddyCount, onChange, onClear, onViewChange, rowCount, totalCount, visibleCount, t
 }) {
   const showingCodex = filters.view === 'codex'
   const showingQwen = filters.view === 'qwen'
+  const showingWorkBuddy = filters.view === 'workbuddy'
+  const showingExternal = showingCodex || showingQwen || showingWorkBuddy
   const hasActiveFilters = Boolean(filters.query)
     || (!showingCodex && filters.category !== 'all')
-    || (!showingCodex && !showingQwen && (filters.source !== 'all' || filters.showMissingBuiltin))
-  const viewCounts = { hermes: hermesCount, codex: codexCount, qwen: qwenCount }
-  const viewOptions = VIEWS.map(id => ({
+    || (!showingExternal && (filters.source !== 'all' || filters.showMissingBuiltin))
+  const viewCounts = {
+    hermes: hermesCount, codex: codexCount, qwen: qwenCount, workbuddy: workbuddyCount
+  }
+  const viewOptions = VIEWS.filter(id => (
+    id === 'hermes' || id === 'codex' || viewCounts[id] > 0
+  )).map(id => ({
     id,
     label: `${t(`views.${id}`)} ${viewCounts[id]}`
   }))
@@ -1038,7 +1071,7 @@ function FilterPanel({
         })
       ] }),
       jsxs('div', { className: 'flex flex-wrap items-center gap-2', children: [
-        showingCodex || showingQwen ? null : jsx('div', {
+        showingExternal ? null : jsx('div', {
           className: 'flex flex-wrap gap-1.5',
           children: SOURCES.map(key => jsx(Button, {
             'aria-pressed': filters.source === key,
@@ -1065,7 +1098,7 @@ function FilterPanel({
             ...categories.map(value => jsx('option', { value, children: value }, value))
           ]
         }),
-        showingCodex || showingQwen ? null : jsxs('label', {
+        showingExternal ? null : jsxs('label', {
           className: 'flex min-h-8 shrink-0 items-center gap-2 text-sm',
           children: [
             jsx('input', {
@@ -1180,6 +1213,24 @@ function SkillManagePage() {
   const view = useInventoryView(data, { ...filters, language }, filters.showMissingBuiltin, t)
   const showingCodex = filters.view === 'codex'
   const showingQwen = filters.view === 'qwen'
+  const showingWorkBuddy = filters.view === 'workbuddy'
+  useEffect(() => {
+    const currentViewHasRows = filters.view === 'qwen'
+      ? view.qwen.length > 0
+      : filters.view === 'workbuddy'
+        ? view.workbuddy.length > 0
+        : true
+    if (currentViewHasRows) return
+    setFilters(current => current.view === filters.view
+      ? {
+          ...current,
+          view: 'hermes',
+          source: 'all',
+          category: 'all',
+          showMissingBuiltin: false
+        }
+      : current)
+  }, [filters.view, view.qwen.length, view.workbuddy.length])
   const diagnostics = asArray(data.diagnostics)
   const summary = {
     disabled: view.installed.filter(row => row.status === 'disabled').length,
@@ -1188,10 +1239,14 @@ function SkillManagePage() {
   }
   const visibleCount = showingCodex
     ? view.codexVisible.length
-    : showingQwen ? view.qwenVisible.length : view.visible.length
+    : showingQwen
+      ? view.qwenVisible.length
+      : showingWorkBuddy ? view.workbuddyVisible.length : view.visible.length
   const totalCount = showingCodex
     ? view.codex.length
-    : showingQwen ? view.qwen.length : view.rows.length
+    : showingQwen
+      ? view.qwen.length
+      : showingWorkBuddy ? view.workbuddy.length : view.rows.length
   const busy = mutation.isPending || pluginUpdate.isPending
   const changeFilter = (key, value) => setFilters(current => ({ ...current, [key]: value }))
   const clearFilters = () => setFilters(current => ({
@@ -1257,13 +1312,16 @@ function SkillManagePage() {
           }),
           jsx(Diagnostics, { rows: diagnostics, t }),
           jsx(FilterPanel, {
-            categories: showingQwen ? view.qwenCategories : view.categories,
+            categories: showingQwen
+              ? view.qwenCategories
+              : showingWorkBuddy ? view.workbuddyCategories : view.categories,
             codexCount: view.codex.length,
             counts: view.rowCounts,
             filters,
             hermesCount: view.installed.length,
             missingCount: data.missingBuiltinCount || 0,
             qwenCount: view.qwen.length,
+            workbuddyCount: view.workbuddy.length,
             onChange: changeFilter,
             onClear: clearFilters,
             onViewChange: value => setFilters(current => ({
@@ -1273,7 +1331,9 @@ function SkillManagePage() {
               category: 'all',
               showMissingBuiltin: false
             })),
-            rowCount: showingQwen ? view.qwen.length : view.rows.length,
+            rowCount: showingQwen
+              ? view.qwen.length
+              : showingWorkBuddy ? view.workbuddy.length : view.rows.length,
             totalCount,
             visibleCount,
             t
@@ -1292,8 +1352,12 @@ function SkillManagePage() {
                 language,
                 onAction: beginAction,
                 onSelect: setSelected,
-                rows: showingQwen ? view.qwenVisible : view.visible,
-                view: showingQwen ? 'qwen' : 'hermes',
+                rows: showingQwen
+                  ? view.qwenVisible
+                  : showingWorkBuddy ? view.workbuddyVisible : view.visible,
+                view: showingQwen
+                  ? 'qwen'
+                  : showingWorkBuddy ? 'workbuddy' : 'hermes',
                 t
               }),
           jsx(History, { history: asArray(data.history), t })

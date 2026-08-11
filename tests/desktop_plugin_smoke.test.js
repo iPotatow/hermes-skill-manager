@@ -38,12 +38,13 @@ test('plugin update has a dedicated endpoint and an explicit second confirmation
 })
 
 test('desktop action policy preserves every backend operation and confirmation boundary', () => {
-  for (const action of ['delete', 'delete-codex', 'delete-qwen', 'reset', 'restore', 'update', 'sync-codex']) {
+  for (const action of ['delete', 'delete-codex', 'delete-qwen', 'delete-workbuddy', 'reset', 'restore', 'update', 'sync-codex']) {
     assert.match(source, new RegExp(action))
   }
   assert.match(source, /\['builtin', 'hub-installed', 'local'\]\.includes\(sourceOf\(row\)\)/)
   assert.match(source, /force:\s*action === 'sync-codex' && Boolean\(confirm\)/)
-  assert.match(source, /CONFIRMED_ACTIONS = new Set\(\['delete', 'delete-codex', 'delete-qwen', 'reset'\]\)/)
+  assert.match(source, /CONFIRMED_ACTIONS = new Set\(\[/)
+  assert.match(source, /'delete-workbuddy'/)
   assert.match(source, /payload\.status === 409/)
 })
 
@@ -147,7 +148,7 @@ test('desktop copy is bilingual and includes backend-mount guidance', () => {
 })
 
 test('Hermes sources exclude the removed Optional module', () => {
-  assert.match(source, /const VIEWS = \['hermes', 'codex', 'qwen'\]/)
+  assert.match(source, /const VIEWS = \['hermes', 'codex', 'qwen', 'workbuddy'\]/)
   assert.match(source, /const SOURCES = \['all', 'builtin', 'hub-installed', 'local'\]/)
   assert.match(source, /jsx\(SegmentedControl/)
   assert.match(source, /const showingCodex = filters\.view === 'codex'/)
@@ -155,8 +156,19 @@ test('Hermes sources exclude the removed Optional module', () => {
   assert.match(source, /builtin: '内建', 'hub-installed': '社区'/)
   assert.match(source, /showMissingBuiltin: '显示可恢复的内建技能'/)
   assert.match(source, /qwen: '千问办公技能'/)
+  assert.match(source, /workbuddy: 'WorkBuddy 技能'/)
   assert.doesNotMatch(source, /optional/i)
   assert.doesNotMatch(source, /showDeleted/)
+})
+
+test('QwenWork and WorkBuddy sheets hide when their skill counts are zero', () => {
+  assert.match(source, /const showingWorkBuddy = filters\.view === 'workbuddy'/)
+  assert.match(source, /viewCounts\[id\] > 0/)
+  assert.match(source, /workbuddyCount: view\.workbuddy\.length/)
+  assert.match(source, /workbuddySkills/)
+  assert.match(source, /view\.workbuddyVisible/)
+  assert.match(source, /currentViewHasRows/)
+  assert.match(source, /view: 'hermes'/)
 })
 
 test('paths stay hidden while drawers preserve keyboard focus and copyable identifiers', () => {

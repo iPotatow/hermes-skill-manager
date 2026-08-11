@@ -69,6 +69,7 @@ class SkillManager:
         missing = self.inventory_reader.missing_builtin_rows(rows, bundled)
         codex_rows = self.inventory_reader.codex_inventory(diagnostics)
         qwenwork_rows = self.inventory_reader.qwenwork_inventory(diagnostics)
+        workbuddy_rows = self.inventory_reader.workbuddy_inventory(diagnostics)
         state = self.state.load()
 
         counts: dict[str, int] = {}
@@ -99,12 +100,15 @@ class SkillManager:
             "codexSkillCount": len(codex_rows),
             "qwenworkSkills": qwenwork_rows,
             "qwenworkSkillCount": len(qwenwork_rows),
+            "workbuddySkills": workbuddy_rows,
+            "workbuddySkillCount": len(workbuddy_rows),
             "diagnostics": diagnostics,
             "meta": {
                 "home": str(self.paths.home),
                 "skillsDir": str(self.paths.skills),
                 "codexSkillsDir": str(self.paths.codex_skills),
                 "qwenworkSkillsDir": str(self.paths.qwenwork_skills),
+                "workbuddySkillsDir": str(self.paths.workbuddy_skills),
                 "generatedAt": self.state.now(),
                 "partial": bool(diagnostics),
             },
@@ -211,6 +215,19 @@ class SkillManager:
                 raise SkillManagerError(404, "千问办公技能目录不存在")
             shutil.rmtree(target)
         self._record("delete-qwen", row)
+        return {"ok": True, "skill": row}
+
+    def delete_workbuddy(self, name: str, relative_path: str, confirm: str) -> dict[str, Any]:
+        """Delete one WorkBuddy user skill after exact-name confirmation."""
+
+        self._confirm(confirm, name)
+        with self._sync_lock:
+            row = self.inventory_reader.find_workbuddy_user(relative_path, name)
+            target = self.inventory_reader.safe_workbuddy_relative_target(row["relativePath"])
+            if target.is_symlink() or not target.is_dir() or not (target / "SKILL.md").is_file():
+                raise SkillManagerError(404, "WorkBuddy 技能目录不存在")
+            shutil.rmtree(target)
+        self._record("delete-workbuddy", row)
         return {"ok": True, "skill": row}
 
     def sync_codex(
