@@ -28,10 +28,21 @@ MARKDOWN_ROW_RE = re.compile(
     re.MULTILINE,
 )
 LOCAL_FALLBACKS = {
+    "competitor-news-monitor": "监控竞争对手新闻与公告，汇总重要动态并生成可追踪的更新报告。",
     "computer-use": "在后台操作用户桌面，包括点击、输入、滚动和拖拽，不抢占光标、键盘焦点或切换虚拟桌面。支持 macOS、Windows 和 Linux。",
     "docx": "创建、读取和编辑 Word .docx 文档及模板。",
+    "document-to-action-items": "从文档中提取明确的行动项、负责人、截止时间和待确认事项。",
+    "email-inbox-triage": "整理电子邮件收件箱，按紧急程度和主题分类，并提出后续处理建议。",
+    "github-issue-to-pr": "把 GitHub Issue 转化为经过实现、测试和说明的 Pull Request。",
+    "grounded-citations": "为研究结论查找可靠来源，并生成可核验、与论述对应的引用。",
+    "inspecting-hermes-desktop-dom": "检查 Hermes Desktop 的 DOM、组件状态和交互行为，用于调试插件界面。",
+    "meeting-action-items": "从会议记录中整理决策、行动项、负责人和截止时间。",
+    "merge-reconciler": "分析并协调并行开发结果，处理冲突并验证合并后的代码状态。",
     "pdf": "创建、合并、拆分、填写和保护 PDF 文件。",
+    "product-price-monitor": "持续跟踪商品价格变化，在达到条件时生成摘要或提醒。",
+    "sdlc-review": "按软件开发生命周期检查需求、设计、实现、测试与发布准备情况。",
     "simplify-code": "通过 4 个并行 agent 清理最近的代码变更。",
+    "weekly-review-planning": "回顾一周的进展与未完成事项，并制定下一周的优先级和计划。",
     "xlsx": "创建、读取和编辑 Excel .xlsx 电子表格及 CSV 文件。",
 }
 

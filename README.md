@@ -4,7 +4,7 @@
 
 `skill-manager`（Skill Manager / 技能管理）是独立的 Hermes Desktop 原生插件，用于查看和维护内建、Skills Hub、本地技能、千问办公和 WorkBuddy 技能，并可管理 Codex 用户技能。它不包含 Hermes Dashboard 页面，也不依赖 Dashboard 插件仓库。
 
-版本：`1.10.0`
+版本：`1.10.1`
 
 ## 功能
 
@@ -103,4 +103,4 @@ node --test tests/desktop_plugin_smoke.test.js
 python3 -m unittest discover -s tests -v
 ```
 
-插件 ID：`skill-manager` · Desktop 路径：`/skill-manager` · 版本：`1.10.0`
+插件 ID：`skill-manager` · Desktop 路径：`/skill-manager` · 版本：`1.10.1`

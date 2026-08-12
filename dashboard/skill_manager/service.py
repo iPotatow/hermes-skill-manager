@@ -158,7 +158,9 @@ class SkillManager:
             identifier = row.get("identifier", "")
             if not identifier:
                 raise SkillManagerError(400, "该 hub 技能缺少来源标识，无法重置")
-            self._run_external(lambda: self.runtime.reset_hub(identifier, row.get("category", "")))
+            self._run_external(lambda: self.runtime.reset_hub(
+                row["name"], identifier, row.get("category", "")
+            ))
         else:
             raise SkillManagerError(400, "本地技能不支持重置")
         self._complete_mutation("reset", row)
@@ -174,9 +176,10 @@ class SkillManager:
 
     def update(self, name: str) -> dict[str, Any]:
         row = self.inventory_reader.find("hub-installed", name)
-        self._run_external(lambda: self.runtime.update_hub(row["name"]))
-        self._complete_mutation("update", row)
-        return {"ok": True, "skill": row}
+        result = self._run_external(lambda: self.runtime.update_hub(row["name"]))
+        if result.get("status") == "updated":
+            self._complete_mutation("update", row)
+        return {"ok": True, "skill": row, "result": result}
 
     def update_plugin(self, confirm: str) -> dict[str, Any]:
         """Update this plugin after an explicit yes/no confirmation in Desktop."""

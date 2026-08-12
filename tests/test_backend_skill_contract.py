@@ -28,6 +28,7 @@ from skill_manager.errors import SkillManagerError
 from skill_manager.filesystem import (
     copy_file_atomic,
     copy_skill,
+    preflight_copy_file,
     safe_descendant,
     validate_sync_source,
 )
@@ -83,9 +84,11 @@ class RuntimeStub:
 
     def reset_builtin(self, name):
         self.calls.append(("reset-builtin", name))
+        return {"ok": True}
 
-    def reset_hub(self, identifier, category):
-        self.calls.append(("reset-hub", identifier, category))
+    def reset_hub(self, name, identifier, category):
+        self.calls.append(("reset-hub", name, identifier, category))
+        return {"ok": True}
 
     def restore_builtin(self, name):
         self.calls.append(("restore", name))
@@ -93,6 +96,7 @@ class RuntimeStub:
 
     def update_hub(self, name):
         self.calls.append(("update", name))
+        return {"ok": True, "status": "updated"}
 
     def update_plugin(self, name, plugin_root, desktop_entry):
         self.calls.append(("plugin-update", name, plugin_root, desktop_entry))
@@ -184,9 +188,13 @@ class BackendSkillContractTest(unittest.TestCase):
         )
         self.assertEqual(catalog["schemaVersion"], 2)
         self.assertEqual(catalog["source"], OFFICIAL_CATALOG_URL)
-        self.assertEqual(len(catalog["skills"]), 69)
-        self.assertEqual(catalog["officialTranslationCount"], 64)
-        self.assertEqual(catalog["fallbackTranslationCount"], 5)
+        self.assertEqual(len(catalog["skills"]), 79)
+        self.assertEqual(catalog["officialTranslationCount"], 63)
+        self.assertEqual(catalog["fallbackTranslationCount"], 16)
+        self.assertEqual(
+            catalog["officialTranslationCount"] + catalog["fallbackTranslationCount"],
+            len(catalog["skills"]),
+        )
         self.assertNotIn("petdex", catalog["skills"])
         self.assertIn("simplify-code", catalog["skills"])
         for row in catalog["skills"].values():
@@ -274,6 +282,136 @@ class BackendSkillContractTest(unittest.TestCase):
             self.assertEqual(target.read_text(encoding="utf-8"), "updated entry")
             self.assertTrue(result["restartRequired"])
             self.assertEqual(result["desktopPath"], str(target))
+
+    def test_plugin_update_preflight_runs_before_checkout_mutation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            calls = []
+            plugins_cmd = types.ModuleType("hermes_cli.plugins_cmd")
+            plugins_cmd.dashboard_update_user_plugin = lambda name: calls.append(name) or {"ok": True}
+            hermes_cli = types.ModuleType("hermes_cli")
+            hermes_cli.__path__ = []
+
+            with patch.dict(sys.modules, {
+                "hermes_cli": hermes_cli,
+                "hermes_cli.plugins_cmd": plugins_cmd,
+            }):
+                with self.assertRaises(SkillManagerError):
+                    HermesRuntime.update_plugin("skill-manager", root / "missing", root / "active.js")
+
+            self.assertEqual(calls, [])
+
+    def test_preflight_copy_file_leaves_target_unchanged(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "source.js"
+            target = root / "active" / "plugin.js"
+            source.write_text("new", encoding="utf-8")
+            target.parent.mkdir()
+            target.write_text("old", encoding="utf-8")
+
+            preflight_copy_file(source, target)
+
+            self.assertEqual(target.read_text(encoding="utf-8"), "old")
+            self.assertFalse(list(target.parent.glob(".*.preflight")))
+
+    def test_runtime_builtin_reset_raises_when_hermes_reports_failure(self):
+        skills_sync = types.ModuleType("tools.skills_sync")
+        skills_sync.reset_bundled_skill = lambda name, restore: {
+            "ok": False, "message": "reset refused"
+        }
+        tools_package = types.ModuleType("tools")
+        tools_package.__path__ = []
+
+        with patch.dict(sys.modules, {
+            "tools": tools_package,
+            "tools.skills_sync": skills_sync,
+        }):
+            with self.assertRaises(SkillManagerError) as raised:
+                HermesRuntime.reset_builtin("demo")
+
+        self.assertEqual(raised.exception.detail, "reset refused")
+
+    def test_runtime_hub_reset_requires_lockfile_change(self):
+        entry = {"updated_at": "before", "content_hash": "old"}
+
+        class FakeLock:
+            def get_installed(self, name):
+                return dict(entry)
+
+        skills_hub = types.ModuleType("tools.skills_hub")
+        skills_hub.HubLockFile = FakeLock
+        tools_package = types.ModuleType("tools")
+        tools_package.__path__ = []
+        cli_skills_hub = types.ModuleType("hermes_cli.skills_hub")
+        cli_skills_hub.do_install = lambda *args, **kwargs: None
+        hermes_cli = types.ModuleType("hermes_cli")
+        hermes_cli.__path__ = []
+
+        with patch.dict(sys.modules, {
+            "tools": tools_package,
+            "tools.skills_hub": skills_hub,
+            "hermes_cli": hermes_cli,
+            "hermes_cli.skills_hub": cli_skills_hub,
+        }):
+            with self.assertRaises(SkillManagerError) as raised:
+                HermesRuntime.reset_hub("demo", "owner/repo", "tools")
+
+        self.assertEqual(raised.exception.status_code, 502)
+
+    def test_runtime_hub_update_verifies_installed_hash(self):
+        entry = {"content_hash": "old"}
+
+        class FakeLock:
+            def get_installed(self, name):
+                return dict(entry)
+
+        skills_hub = types.ModuleType("tools.skills_hub")
+        skills_hub.HubLockFile = FakeLock
+        skills_hub.check_for_skill_updates = lambda name: [{
+            "name": name,
+            "status": "update_available",
+            "latest_hash": "new",
+        }]
+        tools_package = types.ModuleType("tools")
+        tools_package.__path__ = []
+        cli_skills_hub = types.ModuleType("hermes_cli.skills_hub")
+        cli_skills_hub.do_update = lambda **kwargs: None
+        hermes_cli = types.ModuleType("hermes_cli")
+        hermes_cli.__path__ = []
+
+        with patch.dict(sys.modules, {
+            "tools": tools_package,
+            "tools.skills_hub": skills_hub,
+            "hermes_cli": hermes_cli,
+            "hermes_cli.skills_hub": cli_skills_hub,
+        }):
+            with self.assertRaises(SkillManagerError) as raised:
+                HermesRuntime.update_hub("demo")
+
+        self.assertEqual(raised.exception.status_code, 502)
+
+    def test_up_to_date_hub_update_does_not_record_a_mutation(self):
+        row = {
+            "name": "hub",
+            "kind": "hub-installed",
+            "source": "hub-installed",
+            "installPath": "tools/hub",
+        }
+        state = StateStub()
+        runtime = RuntimeStub()
+        runtime.update_hub = lambda name: {"ok": True, "status": "up_to_date"}
+        manager = SkillManager(
+            inventory=InventoryStub([row]),
+            state=state,
+            runtime=runtime,
+        )
+
+        result = manager.update("hub")
+
+        self.assertEqual(result["result"]["status"], "up_to_date")
+        self.assertEqual(runtime.clear_count, 0)
+        self.assertEqual(state.events, [])
 
     def test_copy_skill_is_complete_atomic_and_requires_force(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -726,7 +864,7 @@ class BackendSkillContractTest(unittest.TestCase):
             self.assertEqual([event["action"] for event in state.events], [
                 "delete", "reset", "reset", "restore", "update"
             ])
-            self.assertIn(("reset-hub", "owner/repo", "tools"), runtime.calls)
+            self.assertIn(("reset-hub", "hub", "owner/repo", "tools"), runtime.calls)
 
     def test_translation_workflow_is_scheduled_unified_and_scoped(self):
         workflow = (

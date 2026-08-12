@@ -4,7 +4,7 @@ English | [简体中文](README.md)
 
 `skill-manager` (Skill Manager / 技能管理) is a standalone native Hermes Desktop plugin for inspecting and maintaining built-in, Skills Hub, local, QwenWork, and WorkBuddy skills, and for managing Codex user skills. It contains no Dashboard page and does not depend on the Dashboard plugin repository.
 
-Version: `1.10.0`
+Version: `1.10.1`
 
 ## Features
 
@@ -103,4 +103,4 @@ node --test tests/desktop_plugin_smoke.test.js
 python3 -m unittest discover -s tests -v
 ```
 
-Plugin ID: `skill-manager` · Desktop route: `/skill-manager` · Version: `1.10.0`
+Plugin ID: `skill-manager` · Desktop route: `/skill-manager` · Version: `1.10.1`

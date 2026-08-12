@@ -32,6 +32,27 @@ def copy_file_atomic(source: Path, target: Path) -> None:
             pass
 
 
+def preflight_copy_file(source: Path, target: Path) -> None:
+    """Validate that a later atomic copy can read source and stage beside target."""
+
+    source = Path(source)
+    target = Path(target)
+    if source.is_symlink() or not source.is_file():
+        raise SkillManagerError(500, "更新前找不到有效的 Desktop 插件入口")
+    if target.exists() and target.is_dir():
+        raise SkillManagerError(500, "Desktop 插件入口被目录占用")
+
+    target.parent.mkdir(parents=True, exist_ok=True)
+    temporary = target.parent / f".{target.name}.{uuid.uuid4().hex}.preflight"
+    try:
+        shutil.copy2(source, temporary)
+    finally:
+        try:
+            temporary.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+
 def safe_descendant(root: Path, relative_path: str, detail: str) -> Path:
     """Return a non-symlink descendant of root or reject the path."""
 

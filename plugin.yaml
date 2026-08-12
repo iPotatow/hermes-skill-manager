@@ -1,5 +1,5 @@
 name: skill-manager
-version: 1.10.0
+version: 1.10.1
 description: "Native Hermes Desktop plugin for managing Hermes, QwenWork, WorkBuddy, and Codex skills."
 author: iPotatow
 kind: standalone
