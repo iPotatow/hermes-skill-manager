@@ -12,6 +12,7 @@ from .filesystem import copy_skill
 from .inventory import Diagnostic, SkillInventory
 from .paths import SkillPaths
 from .runtime import HermesRuntime
+from .skills_sh import SkillsShInventory
 from .state import StateStore
 
 
@@ -27,11 +28,13 @@ class SkillManager:
         inventory: SkillInventory | None = None,
         state: StateStore | None = None,
         runtime: HermesRuntime | None = None,
+        skills_sh: SkillsShInventory | None = None,
     ):
         self.paths = paths or SkillPaths()
         self.inventory_reader = inventory or SkillInventory(self.paths)
         self.state = state or StateStore(self.paths.state, self.paths.legacy_state)
         self.runtime = runtime or HermesRuntime()
+        self.skills_sh_reader = skills_sh or SkillsShInventory()
 
     @staticmethod
     def _confirm(confirm: str, name: str) -> None:
@@ -70,6 +73,7 @@ class SkillManager:
         codex_rows = self.inventory_reader.codex_inventory(diagnostics)
         qwenwork_rows = self.inventory_reader.qwenwork_inventory(diagnostics)
         workbuddy_rows = self.inventory_reader.workbuddy_inventory(diagnostics)
+        skills_sh_rows = self.skills_sh_reader.inventory(diagnostics)
         state = self.state.load()
 
         counts: dict[str, int] = {}
@@ -102,6 +106,8 @@ class SkillManager:
             "qwenworkSkillCount": len(qwenwork_rows),
             "workbuddySkills": workbuddy_rows,
             "workbuddySkillCount": len(workbuddy_rows),
+            "skillsShSkills": skills_sh_rows,
+            "skillsShSkillCount": len(skills_sh_rows),
             "diagnostics": diagnostics,
             "meta": {
                 "home": str(self.paths.home),
@@ -109,6 +115,8 @@ class SkillManager:
                 "codexSkillsDir": str(self.paths.codex_skills),
                 "qwenworkSkillsDir": str(self.paths.qwenwork_skills),
                 "workbuddySkillsDir": str(self.paths.workbuddy_skills),
+                "skillsShSkillsDir": str(self.skills_sh_reader.skills_dir),
+                "skillsShLockFile": str(self.skills_sh_reader.lock_path),
                 "generatedAt": self.state.now(),
                 "partial": bool(diagnostics),
             },
