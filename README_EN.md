@@ -2,27 +2,28 @@
 
 # Hermes Skill Manager
 
-**Manage Hermes, QwenWork, WorkBuddy, and Codex skills from one native Hermes Desktop interface.**
+**Manage Hermes, skills.sh, QwenWork, WorkBuddy, and Codex skills from one native Hermes Desktop interface.**
 
 English · [简体中文](README.md)
 
 </div>
 
-Hermes Skill Manager is a standalone native Hermes Desktop plugin for viewing, maintaining, and synchronizing skills spread across multiple ecosystems. It brings Hermes built-in skills, Skills Hub community skills, local skills, QwenWork, WorkBuddy, and Codex user skills into one management surface while preserving the safety boundaries and operation rules of each source.
+Hermes Skill Manager is a standalone native Hermes Desktop plugin for viewing, maintaining, and synchronizing skills spread across multiple ecosystems. It brings Hermes built-in skills, Skills Hub community skills, local skills, global skills.sh installs, QwenWork, WorkBuddy, and Codex user skills into one management surface while preserving the safety boundaries and operation rules of each source.
 
-Current version: `1.10.1`
+Version: `1.10.1`
 
 ## Why it exists
 
-Skills do not always live in one place. Hermes has built-in, community, and local sources; QwenWork and WorkBuddy maintain separate skill directories; Codex has its own user skills. Managing them manually means jumping between directories, copying files, checking sources, and cleaning up duplicates—with plenty of room for mistakes.
+Skills do not always live in one place. Hermes has built-in, community, and local sources; skills.sh maintains global canonical installs under `~/.agents/skills`; QwenWork and WorkBuddy maintain separate skill directories; Codex has its own user skills. Managing them manually means jumping between directories, copying files, checking sources, and cleaning up duplicates—with plenty of room for mistakes.
 
 Hermes Skill Manager has one goal: **turn skill management into a visible, confirmable, and recoverable Desktop workflow.**
 
 ## What you get
 
-### One place for four skill ecosystems
+### One place for five skill ecosystems
 
 - **Hermes** — browse built-in, community, and local skills with source, category, and full-text filtering.
+- **skills.sh** — reads global canonical skills from `~/.agents/skills` and enriches them with repository and install metadata from the global `.skill-lock.json`; this view is read-only.
 - **QwenWork** — reads `~/.qwenworkcn/skills`, automatically excludes app-bundled skills, and shows only manageable custom or imported skills.
 - **WorkBuddy** — reads `~/.workbuddy/skills`, automatically excludes app-bundled skills, and shows only manageable custom or imported skills.
 - **Codex** — inspect user skills and distinguish skills synced from Hermes from Codex-only skills.
@@ -34,6 +35,7 @@ Hermes Skill Manager has one goal: **turn skill management into a visible, confi
 | Hermes built-in skills | Reset, delete, restore, sync to Codex |
 | Hermes community skills | Reset, update, delete, sync to Codex |
 | Hermes local skills | Delete, sync to Codex |
+| skills.sh global skills | Search, categorize, inspect source metadata (read-only) |
 | QwenWork skills | Search, categorize, inspect, safely delete |
 | WorkBuddy skills | Search, categorize, inspect, safely delete |
 | Codex user skills | Inspect source, delete |
@@ -43,7 +45,7 @@ High-risk actions such as delete, reset, and replacing an existing Codex skill r
 ### A native Hermes Desktop experience
 
 - Native Desktop sidebar page and `⌘K` command entry.
-- Compact table layout with top-level Hermes, QwenWork, WorkBuddy, and Codex views.
+- Compact table layout with top-level Hermes, skills.sh, QwenWork, WorkBuddy, and Codex views.
 - Direct row actions instead of hidden dropdown menus.
 - English and Chinese UI, responsive layout, and Hermes Desktop theme support.
 - Skill details with `Esc` to close, focus trapping, and focus restoration.
@@ -76,7 +78,9 @@ Desktop route: `/skill-manager`
 
 Hermes Skill Manager does not register a Hermes Dashboard page. The Dashboard manifest only mounts the backend API; the actual user interface is provided by the native Hermes Desktop plugin.
 
-The Hermes view treats built-in, community, and local skills as peer sources. QwenWork, WorkBuddy, and Codex each use their own top-level view. QwenWork and WorkBuddy views are hidden automatically when no manageable skills are found.
+The Hermes view treats built-in, community, and local skills as peer sources. skills.sh, QwenWork, WorkBuddy, and Codex each use their own top-level view. The skills.sh, QwenWork, and WorkBuddy views are hidden automatically when no corresponding skills are found.
+
+For skills.sh, the plugin reads only the global canonical directory instead of following per-agent symlink copies. It reads `~/.agents/skills` and, when present, the global `.skill-lock.json` (`~/.agents/.skill-lock.json`, or `$XDG_STATE_HOME/skills/.skill-lock.json`). A missing or malformed lock file does not hide otherwise readable canonical skills.
 
 Chinese descriptions for Hermes built-in skills come from the [official Hermes Chinese skills catalog](https://hermes-agent.nousresearch.com/docs/zh-Hans/reference/skills-catalog). A weekly GitHub Actions workflow synchronizes the official documentation into an offline snapshot, and missing official Chinese text prevents an invalid snapshot from being committed.
 
@@ -95,6 +99,8 @@ During sync, the plugin:
 ## Safety boundaries
 
 Filesystem operations verify that targets remain inside the active Hermes profile's skill directory and reject symlinks at every path component.
+
+skills.sh discovery is read-only. It does not mutate canonical skills or the skills.sh lock file, and symlinked canonical entries are not followed.
 
 Delete operations physically remove skill directories. **This version does not create backups.** When deleting a community skill, the plugin also removes the currently discovered residual copy and invalidates discovery caches so the skill cannot immediately reappear as a local skill.
 
@@ -133,6 +139,7 @@ desktop-plugins/skill-manager/plugin.js          # native Desktop UI
 dashboard/manifest.json                         # backend mount only; no Dashboard page
 dashboard/plugin_api.py                         # FastAPI request adapter and error mapping
 dashboard/skill_manager/                        # discovery, filesystem operations, sync, state, and use cases
+dashboard/skill_manager/skills_sh.py             # read-only global skills.sh discovery and lock metadata
 dashboard/data/builtin_catalog.json             # offline snapshot of official Chinese built-in descriptions
 scripts/sync_builtin_catalog.py                 # official catalog snapshot sync tool
 .github/workflows/sync-skill-translations.yml  # weekly official Chinese snapshot sync
