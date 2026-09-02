@@ -687,7 +687,7 @@ function HermesSyncStatus({ row, t }) {
       className: 'truncate text-xs text-(--ui-text-tertiary)',
       title: sourceLabel,
       children: sourceLabel
-    }) : null
+    })
   ] })
 }
 
