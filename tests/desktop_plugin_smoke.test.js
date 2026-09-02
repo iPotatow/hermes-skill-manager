@@ -147,12 +147,16 @@ test('desktop copy is bilingual and includes backend-mount guidance', () => {
   assert.doesNotMatch(source, /document\.documentElement\.lang|navigator\.language/)
 })
 
-test('Hermes sources exclude the removed Optional module', () => {
-  assert.match(source, /const VIEWS = \['hermes', 'codex', 'qwen', 'workbuddy'\]/)
+test('Hermes sources exclude the removed Optional module and include skills.sh as a separate view', () => {
+  assert.match(source, /const VIEWS = \['hermes', 'skills-sh', 'codex', 'qwen', 'workbuddy'\]/)
   assert.match(source, /const SOURCES = \['all', 'builtin', 'hub-installed', 'local'\]/)
   assert.match(source, /jsx\(SegmentedControl/)
   assert.match(source, /const showingCodex = filters\.view === 'codex'/)
+  assert.match(source, /const showingSkillsSh = filters\.view === 'skills-sh'/)
   assert.match(source, /showingCodex\s*\? jsx\(CodexTable/)
+  assert.match(source, /skillsShSkills/)
+  assert.match(source, /skillsShCount: view\.skillsSh\.length/)
+  assert.match(source, /'skills-sh': 'skills\.sh 技能'/)
   assert.match(source, /builtin: '内建', 'hub-installed': '社区'/)
   assert.match(source, /showMissingBuiltin: '显示可恢复的内建技能'/)
   assert.match(source, /qwen: '千问办公技能'/)
@@ -161,11 +165,13 @@ test('Hermes sources exclude the removed Optional module', () => {
   assert.doesNotMatch(source, /showDeleted/)
 })
 
-test('QwenWork and WorkBuddy sheets hide when their skill counts are zero', () => {
+test('skills.sh, QwenWork and WorkBuddy sheets hide when their skill counts are zero', () => {
+  assert.match(source, /const showingSkillsSh = filters\.view === 'skills-sh'/)
   assert.match(source, /const showingWorkBuddy = filters\.view === 'workbuddy'/)
   assert.match(source, /viewCounts\[id\] > 0/)
+  assert.match(source, /skillsShCount: view\.skillsSh\.length/)
   assert.match(source, /workbuddyCount: view\.workbuddy\.length/)
-  assert.match(source, /workbuddySkills/)
+  assert.match(source, /view\.skillsShVisible/)
   assert.match(source, /view\.workbuddyVisible/)
   assert.match(source, /currentViewHasRows/)
   assert.match(source, /view: 'hermes'/)
