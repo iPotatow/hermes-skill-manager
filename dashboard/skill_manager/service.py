@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import shutil
 import threading
+from pathlib import Path
 from typing import Any, Callable
 
 from .constants import PLUGIN_ID
 from .errors import SkillManagerError
-from .filesystem import copy_skill
+from .filesystem import link_skill, safe_link_target
 from .inventory import Diagnostic, SkillInventory
 from .paths import SkillPaths
 from .runtime import HermesRuntime
@@ -21,6 +22,7 @@ class SkillManager:
 
     _sync_lock = threading.RLock()
     _plugin_update_lock = threading.RLock()
+    _LINK_TARGETS = {"codex", "qwenwork", "workbuddy"}
 
     def __init__(
         self,
@@ -117,6 +119,7 @@ class SkillManager:
                 "workbuddySkillsDir": str(self.paths.workbuddy_skills),
                 "skillsShSkillsDir": str(self.skills_sh_reader.skills_dir),
                 "skillsShLockFile": str(self.skills_sh_reader.lock_path),
+                "linkTargets": sorted(self._LINK_TARGETS),
                 "generatedAt": self.state.now(),
                 "partial": bool(diagnostics),
             },
@@ -241,6 +244,65 @@ class SkillManager:
         self._record("delete-workbuddy", row)
         return {"ok": True, "skill": row}
 
+    def _agent_skills_root(self, target_agent: str) -> Path:
+        normalized = str(target_agent or "").strip().lower()
+        roots = {
+            "codex": self.paths.codex_skills,
+            "qwenwork": self.paths.qwenwork_skills,
+            "workbuddy": self.paths.workbuddy_skills,
+        }
+        try:
+            return roots[normalized]
+        except KeyError as exc:
+            raise SkillManagerError(400, f"不支持的目标 Agent：{target_agent}") from exc
+
+    def link_agent(
+        self,
+        source: str,
+        name: str,
+        target_agent: str,
+        confirm: str = "",
+        force: bool = False,
+    ) -> dict[str, Any]:
+        """Expose a Hermes skill to another agent without moving or copying it."""
+
+        row = self.inventory_reader.find(source, name)
+        if self._kind(row) not in {"builtin", "hub-installed", "local"}:
+            raise SkillManagerError(400, "该类型的技能不能作为 Hermes 软链接源")
+
+        normalized_agent = str(target_agent or "").strip().lower()
+        if normalized_agent not in self._LINK_TARGETS:
+            raise SkillManagerError(400, f"不支持的目标 Agent：{target_agent}")
+
+        source_path = self.inventory_reader.safe_target(row["installPath"])
+        target = safe_link_target(
+            self._agent_skills_root(normalized_agent),
+            row["name"],
+            f"{normalized_agent} 技能名或路径不安全",
+            create_root=True,
+        )
+        if force:
+            self._confirm(confirm, row["name"])
+
+        try:
+            with self._sync_lock:
+                created = link_skill(source_path, target, force=force)
+        except SkillManagerError:
+            raise
+        except Exception as exc:
+            raise SkillManagerError(500, f"链接到 {normalized_agent} 失败：{exc}") from exc
+
+        self._record(f"link-{normalized_agent}", row)
+        return {
+            "ok": True,
+            "skill": row,
+            "targetAgent": normalized_agent,
+            "sourcePath": str(source_path),
+            "targetPath": str(target),
+            "linked": created,
+            "unchanged": not created,
+        }
+
     def sync_codex(
         self,
         source: str,
@@ -248,19 +310,26 @@ class SkillManager:
         confirm: str = "",
         force: bool = False,
     ) -> dict[str, Any]:
-        row = self.inventory_reader.find(source, name)
-        if self._kind(row) not in {"builtin", "hub-installed", "local"}:
-            raise SkillManagerError(400, "该类型的 Hermes 技能不允许同步到 Codex")
-        source_path = self.inventory_reader.safe_target(row["installPath"])
-        target = self.inventory_reader.safe_codex_target(row["name"], create_root=True)
-        if force:
-            self._confirm(confirm, row["name"])
-        try:
-            with self._sync_lock:
-                copy_skill(source_path, target, force=force)
-        except SkillManagerError:
-            raise
-        except Exception as exc:
-            raise SkillManagerError(500, f"同步到 Codex 失败：{exc}") from exc
-        self._record("sync-codex", row)
-        return {"ok": True, "skill": row, "codexPath": str(target)}
+        """Backward-compatible endpoint: Codex sync is now a symlink binding."""
+
+        result = self.link_agent(source, name, "codex", confirm=confirm, force=force)
+        result["codexPath"] = result["targetPath"]
+        return result
+
+    def link_qwenwork(
+        self,
+        source: str,
+        name: str,
+        confirm: str = "",
+        force: bool = False,
+    ) -> dict[str, Any]:
+        return self.link_agent(source, name, "qwenwork", confirm=confirm, force=force)
+
+    def link_workbuddy(
+        self,
+        source: str,
+        name: str,
+        confirm: str = "",
+        force: bool = False,
+    ) -> dict[str, Any]:
+        return self.link_agent(source, name, "workbuddy", confirm=confirm, force=force)
