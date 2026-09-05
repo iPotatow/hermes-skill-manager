@@ -36,6 +36,27 @@ class InventoryStub:
         return self.source_path
 
 
+class ExternalInventoryStub(InventoryStub):
+    def __init__(self, hermes_path: Path, qwen_path: Path):
+        super().__init__(hermes_path)
+        self.qwen_path = qwen_path
+
+    def find_qwenwork_user(self, relative_path, name):
+        if relative_path == "demo" and name == "demo":
+            return {
+                "name": "demo",
+                "kind": "qwen",
+                "source": "qwenwork",
+                "relativePath": "demo",
+            }
+        raise SkillManagerError(404, "missing qwen skill")
+
+    def safe_qwenwork_relative_target(self, relative_path):
+        if relative_path != "demo":
+            raise SkillManagerError(400, "unexpected qwen path")
+        return self.qwen_path
+
+
 class StateStub:
     def __init__(self):
         self.events = []
@@ -133,6 +154,7 @@ class AgentSymlinkTest(unittest.TestCase):
             }
             for agent, target in expected.items():
                 result = manager.link_agent("local", "demo", agent)
+                self.assertEqual(result["originAgent"], "hermes")
                 self.assertEqual(result["targetAgent"], agent)
                 self.assertTrue(target.is_symlink())
                 self.assertEqual(target.resolve(), source.resolve())
@@ -143,6 +165,66 @@ class AgentSymlinkTest(unittest.TestCase):
                 [event["action"] for event in state.events],
                 ["link-codex", "link-qwenwork", "link-workbuddy"],
             )
+
+    def test_external_agent_skill_can_link_to_hermes_but_not_to_itself(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            hermes_root = root / "hermes-skills"
+            qwen_source = root / "qwen" / "skills" / "demo"
+            qwen_source.mkdir(parents=True)
+            (qwen_source / "SKILL.md").write_text("---\nname: demo\n---\n", encoding="utf-8")
+            paths = SkillPaths(
+                skills_override=hermes_root,
+                qwenwork_home_override=root / "qwen",
+            )
+            manager = SkillManager(
+                paths=paths,
+                inventory=ExternalInventoryStub(hermes_root / "unused", qwen_source),
+                state=StateStub(),
+                runtime=object(),
+                skills_sh=object(),
+            )
+
+            result = manager.link_agent("qwen", "demo", "hermes", relative_path="demo")
+            target = hermes_root / "demo"
+            self.assertEqual(result["originAgent"], "qwenwork")
+            self.assertTrue(target.is_symlink())
+            self.assertEqual(target.resolve(), qwen_source.resolve())
+
+            with self.assertRaises(SkillManagerError) as raised:
+                manager.link_agent("qwen", "demo", "qwenwork", relative_path="demo")
+            self.assertEqual(raised.exception.status_code, 400)
+
+    def test_unlink_removes_only_the_binding(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "hermes-skills" / "demo"
+            source.mkdir(parents=True)
+            skill_md = source / "SKILL.md"
+            skill_md.write_text("demo", encoding="utf-8")
+            paths = SkillPaths(
+                skills_override=root / "hermes-skills",
+                codex_home_override=root / "codex",
+            )
+            state = StateStub()
+            manager = SkillManager(
+                paths=paths,
+                inventory=InventoryStub(source),
+                state=state,
+                runtime=object(),
+                skills_sh=object(),
+            )
+
+            manager.link_agent("local", "demo", "codex")
+            target = paths.codex_skills / "demo"
+            self.assertTrue(target.is_symlink())
+
+            manager.unlink_agent("local", "demo", "codex")
+            self.assertFalse(target.exists())
+            self.assertFalse(target.is_symlink())
+            self.assertTrue(source.is_dir())
+            self.assertEqual(skill_md.read_text(encoding="utf-8"), "demo")
+            self.assertEqual(state.events[-1]["action"], "unlink-codex")
 
     def test_service_requires_confirmation_before_rebinding_symlink(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -176,10 +258,10 @@ class AgentSymlinkTest(unittest.TestCase):
             self.assertEqual(raised.exception.status_code, 400)
 
             result = manager.sync_codex("local", "demo", confirm="demo", force=True)
-            self.assertEqual(result["codexPath"], str(target.resolve().parent / "demo") if False else str(target))
+            self.assertEqual(result["codexPath"], str(target))
             self.assertEqual(target.resolve(), source.resolve())
 
-    def test_service_rejects_unknown_agent(self):
+    def test_service_rejects_unknown_agent_and_self_target(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             source = root / "hermes-skills" / "demo"
@@ -195,6 +277,10 @@ class AgentSymlinkTest(unittest.TestCase):
 
             with self.assertRaises(SkillManagerError) as raised:
                 manager.link_agent("local", "demo", "unknown")
+            self.assertEqual(raised.exception.status_code, 400)
+
+            with self.assertRaises(SkillManagerError) as raised:
+                manager.link_agent("local", "demo", "hermes")
             self.assertEqual(raised.exception.status_code, 400)
 
 
