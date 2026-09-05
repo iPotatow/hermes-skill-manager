@@ -9,7 +9,7 @@ from typing import Any, Callable
 
 from .constants import PLUGIN_ID
 from .errors import SkillManagerError
-from .filesystem import link_skill, safe_link_target
+from .filesystem import link_skill, safe_descendant, safe_link_target
 from .inventory import Diagnostic, SkillInventory
 from .paths import SkillPaths
 from .runtime import HermesRuntime
@@ -22,7 +22,8 @@ class SkillManager:
 
     _sync_lock = threading.RLock()
     _plugin_update_lock = threading.RLock()
-    _LINK_TARGETS = {"codex", "qwenwork", "workbuddy"}
+    _LINK_TARGETS = {"hermes", "codex", "qwenwork", "workbuddy"}
+    _HERMES_SOURCES = {"builtin", "hub-installed", "local"}
 
     def __init__(
         self,
@@ -67,6 +68,116 @@ class SkillManager:
         except Exception as exc:
             raise SkillManagerError(500, str(exc) or exc.__class__.__name__) from exc
 
+    def _agent_skills_root(self, target_agent: str) -> Path:
+        normalized = str(target_agent or "").strip().lower()
+        roots = {
+            "hermes": self.paths.skills,
+            "codex": self.paths.codex_skills,
+            "qwenwork": self.paths.qwenwork_skills,
+            "workbuddy": self.paths.workbuddy_skills,
+        }
+        try:
+            return roots[normalized]
+        except KeyError as exc:
+            raise SkillManagerError(400, f"不支持的目标 Agent：{target_agent}") from exc
+
+    def _skills_sh_source(self, name: str, relative_path: str) -> tuple[dict[str, Any], Path]:
+        diagnostics: list[Diagnostic] = []
+        for row in self.skills_sh_reader.inventory(diagnostics):
+            if row.get("name") == name and row.get("relativePath") == relative_path:
+                path = safe_descendant(
+                    self.skills_sh_reader.skills_dir,
+                    str(row["relativePath"]),
+                    "skills.sh 技能路径不安全",
+                )
+                return row, path
+        if diagnostics:
+            detail = "; ".join(item.get("message", "") for item in diagnostics if item.get("message"))
+            raise SkillManagerError(500, detail or "读取 skills.sh 技能失败")
+        raise SkillManagerError(404, f"未找到 skills.sh 技能：{name}")
+
+    def _resolve_link_source(
+        self,
+        source: str,
+        name: str,
+        relative_path: str = "",
+    ) -> tuple[dict[str, Any], Path, str]:
+        """Resolve a real skill directory and the agent that owns it."""
+
+        normalized = str(source or "").strip().lower()
+        if normalized in self._HERMES_SOURCES:
+            row = self.inventory_reader.find(normalized, name)
+            return row, self.inventory_reader.safe_target(row["installPath"]), "hermes"
+        if normalized in {"skills-sh", "skills.sh"}:
+            row, path = self._skills_sh_source(name, relative_path)
+            return row, path, "skills-sh"
+        if normalized == "codex":
+            row = self.inventory_reader.find_codex_user(relative_path, name)
+            return row, self.inventory_reader.safe_codex_relative_target(row["relativePath"]), "codex"
+        if normalized in {"qwen", "qwenwork"}:
+            row = self.inventory_reader.find_qwenwork_user(relative_path, name)
+            return row, self.inventory_reader.safe_qwenwork_relative_target(row["relativePath"]), "qwenwork"
+        if normalized == "workbuddy":
+            row = self.inventory_reader.find_workbuddy_user(relative_path, name)
+            return row, self.inventory_reader.safe_workbuddy_relative_target(row["relativePath"]), "workbuddy"
+        raise SkillManagerError(400, f"该技能来源不支持软链接：{source}")
+
+    def _link_state(self, source_path: Path, name: str, origin_agent: str, target_agent: str) -> str:
+        if origin_agent == target_agent:
+            return "self"
+        target = safe_link_target(
+            self._agent_skills_root(target_agent),
+            name,
+            f"{target_agent} 技能名或路径不安全",
+        )
+        if target.is_symlink():
+            try:
+                return "linked" if target.resolve(strict=True) == source_path.resolve(strict=True) else "conflict"
+            except (OSError, RuntimeError):
+                return "broken"
+        return "occupied" if target.exists() else "absent"
+
+    def _with_link_metadata(
+        self,
+        row: dict[str, Any],
+        source: str,
+        origin_agent: str,
+        source_path: Path,
+    ) -> dict[str, Any]:
+        enriched = dict(row)
+        enriched["linkable"] = True
+        enriched["linkSource"] = source
+        enriched["originAgent"] = origin_agent
+        enriched["linkRelativePath"] = str(row.get("relativePath") or row.get("installPath") or "")
+        enriched["agentLinks"] = {
+            agent: self._link_state(source_path, str(row.get("name", "")), origin_agent, agent)
+            for agent in sorted(self._LINK_TARGETS)
+        }
+        return enriched
+
+    def _enrich_rows(
+        self,
+        rows: list[dict[str, Any]],
+        source: str,
+        origin_agent: str,
+        path_loader: Callable[[dict[str, Any]], Path],
+        diagnostics: list[Diagnostic],
+    ) -> list[dict[str, Any]]:
+        enriched: list[dict[str, Any]] = []
+        for row in rows:
+            if row.get("status") == "deleted":
+                enriched.append({**row, "linkable": False})
+                continue
+            try:
+                enriched.append(self._with_link_metadata(row, source, origin_agent, path_loader(row)))
+            except Exception as exc:
+                diagnostics.append({
+                    "component": f"{origin_agent}-link-state",
+                    "message": str(exc) or exc.__class__.__name__,
+                })
+                enriched.append({**row, "linkable": False})
+        return enriched
+
     def inventory(self) -> dict[str, Any]:
         diagnostics: list[Diagnostic] = []
         bundled = self.inventory_reader.bundled_skills(diagnostics)
@@ -76,6 +187,50 @@ class SkillManager:
         qwenwork_rows = self.inventory_reader.qwenwork_inventory(diagnostics)
         workbuddy_rows = self.inventory_reader.workbuddy_inventory(diagnostics)
         skills_sh_rows = self.skills_sh_reader.inventory(diagnostics)
+
+        rows = self._enrich_rows(
+            rows,
+            "hermes",
+            "hermes",
+            lambda row: self.inventory_reader.safe_target(row["installPath"]),
+            diagnostics,
+        )
+        # Preserve each Hermes row's concrete classification for lookups.
+        for row in rows:
+            if row.get("linkable"):
+                row["linkSource"] = self._kind(row)
+        codex_rows = self._enrich_rows(
+            codex_rows,
+            "codex",
+            "codex",
+            lambda row: self.inventory_reader.safe_codex_relative_target(row["relativePath"]),
+            diagnostics,
+        )
+        qwenwork_rows = self._enrich_rows(
+            qwenwork_rows,
+            "qwen",
+            "qwenwork",
+            lambda row: self.inventory_reader.safe_qwenwork_relative_target(row["relativePath"]),
+            diagnostics,
+        )
+        workbuddy_rows = self._enrich_rows(
+            workbuddy_rows,
+            "workbuddy",
+            "workbuddy",
+            lambda row: self.inventory_reader.safe_workbuddy_relative_target(row["relativePath"]),
+            diagnostics,
+        )
+        skills_sh_rows = self._enrich_rows(
+            skills_sh_rows,
+            "skills-sh",
+            "skills-sh",
+            lambda row: safe_descendant(
+                self.skills_sh_reader.skills_dir,
+                str(row["relativePath"]),
+                "skills.sh 技能路径不安全",
+            ),
+            diagnostics,
+        )
         state = self.state.load()
 
         counts: dict[str, int] = {}
@@ -137,10 +292,6 @@ class SkillManager:
             ):
                 raise SkillManagerError(400, "界面中的社区技能路径无效，拒绝删除")
             self._run_external(lambda: self.runtime.uninstall(row["name"]))
-            # A stale duplicate can be the path currently displayed while the
-            # Hub lock points at a different installation path. Uninstalling
-            # clears the lock-owned copy; remove the exact displayed copy too
-            # so it cannot immediately reappear as a local skill.
             if displayed_target.exists():
                 displayed_target = self.inventory_reader.safe_target(row["installPath"])
                 if (
@@ -244,37 +395,24 @@ class SkillManager:
         self._record("delete-workbuddy", row)
         return {"ok": True, "skill": row}
 
-    def _agent_skills_root(self, target_agent: str) -> Path:
-        normalized = str(target_agent or "").strip().lower()
-        roots = {
-            "codex": self.paths.codex_skills,
-            "qwenwork": self.paths.qwenwork_skills,
-            "workbuddy": self.paths.workbuddy_skills,
-        }
-        try:
-            return roots[normalized]
-        except KeyError as exc:
-            raise SkillManagerError(400, f"不支持的目标 Agent：{target_agent}") from exc
-
     def link_agent(
         self,
         source: str,
         name: str,
         target_agent: str,
+        relative_path: str = "",
         confirm: str = "",
         force: bool = False,
     ) -> dict[str, Any]:
-        """Expose a Hermes skill to another agent without moving or copying it."""
+        """Expose any discovered real skill to another agent using a symlink."""
 
-        row = self.inventory_reader.find(source, name)
-        if self._kind(row) not in {"builtin", "hub-installed", "local"}:
-            raise SkillManagerError(400, "该类型的技能不能作为 Hermes 软链接源")
-
+        row, source_path, origin_agent = self._resolve_link_source(source, name, relative_path)
         normalized_agent = str(target_agent or "").strip().lower()
         if normalized_agent not in self._LINK_TARGETS:
             raise SkillManagerError(400, f"不支持的目标 Agent：{target_agent}")
+        if origin_agent == normalized_agent:
+            raise SkillManagerError(400, "不能把技能软链接回它自己的来源 Agent")
 
-        source_path = self.inventory_reader.safe_target(row["installPath"])
         target = safe_link_target(
             self._agent_skills_root(normalized_agent),
             row["name"],
@@ -296,11 +434,54 @@ class SkillManager:
         return {
             "ok": True,
             "skill": row,
+            "originAgent": origin_agent,
             "targetAgent": normalized_agent,
             "sourcePath": str(source_path),
             "targetPath": str(target),
             "linked": created,
             "unchanged": not created,
+        }
+
+    def unlink_agent(
+        self,
+        source: str,
+        name: str,
+        target_agent: str,
+        relative_path: str = "",
+    ) -> dict[str, Any]:
+        """Remove only a managed agent symlink; never remove the source skill."""
+
+        row, source_path, origin_agent = self._resolve_link_source(source, name, relative_path)
+        normalized_agent = str(target_agent or "").strip().lower()
+        if normalized_agent not in self._LINK_TARGETS:
+            raise SkillManagerError(400, f"不支持的目标 Agent：{target_agent}")
+        if origin_agent == normalized_agent:
+            raise SkillManagerError(400, "来源 Agent 不是软链接，不能解绑")
+
+        target = safe_link_target(
+            self._agent_skills_root(normalized_agent),
+            row["name"],
+            f"{normalized_agent} 技能名或路径不安全",
+        )
+        with self._sync_lock:
+            if not target.is_symlink():
+                raise SkillManagerError(404, "目标 Agent 中不存在可解绑的技能软链接")
+            try:
+                matches_source = target.resolve(strict=False) == source_path.resolve(strict=True)
+            except (OSError, RuntimeError):
+                matches_source = False
+            if not matches_source:
+                raise SkillManagerError(409, "目标软链接不属于这个源技能，拒绝删除")
+            target.unlink()
+
+        self._record(f"unlink-{normalized_agent}", row)
+        return {
+            "ok": True,
+            "skill": row,
+            "originAgent": origin_agent,
+            "targetAgent": normalized_agent,
+            "sourcePath": str(source_path),
+            "targetPath": str(target),
         }
 
     def sync_codex(
@@ -310,9 +491,15 @@ class SkillManager:
         confirm: str = "",
         force: bool = False,
     ) -> dict[str, Any]:
-        """Backward-compatible endpoint: Codex sync is now a symlink binding."""
+        """Backward-compatible endpoint: Hermes→Codex sync is now a symlink."""
 
-        result = self.link_agent(source, name, "codex", confirm=confirm, force=force)
+        result = self.link_agent(
+            source,
+            name,
+            "codex",
+            confirm=confirm,
+            force=force,
+        )
         result["codexPath"] = result["targetPath"]
         return result
 
