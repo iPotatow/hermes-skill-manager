@@ -2,151 +2,154 @@
 
 # Hermes Skill Manager
 
-**在一个 Hermes Desktop 原生界面里管理 Hermes、QwenWork、WorkBuddy 与 Codex 技能。**
+**在一个 Hermes Desktop 原生界面里管理技能，并用软链接在多个 Agent 之间共享同一份 Skill。**
 
 [English](README_EN.md) · 简体中文
 
 </div>
 
-Hermes Skill Manager 是独立的 Hermes Desktop 原生插件，用于查看、维护和同步分散在不同技能目录中的技能。它把 Hermes 内建技能、Skills Hub 社区技能、本地技能，以及 QwenWork、WorkBuddy 和 Codex 用户技能放进同一个管理入口，同时保留各来源自己的安全边界和操作规则。
+Hermes Skill Manager 是独立的 Hermes Desktop 原生插件，用于查看和维护 Hermes、skills.sh、QwenWork、WorkBuddy 与 Codex 技能。`1.11.0` 起新增 **Agent 链接**：技能文件始终保留在原始目录，其他 Agent 只创建目录软链接，不再通过复制产生多份 Skill。
 
-当前版本：`1.10.1`
+当前版本：`1.11.0`
 
-## 为什么需要它
+## 核心原则
 
-技能并不总在一个地方：Hermes 有内建、社区和本地来源，QwenWork 与 WorkBuddy 各自维护独立目录，Codex 也有自己的用户技能。手动在多个目录之间查找、复制、更新和删除，不仅慢，也容易留下重复副本或误操作。
+```text
+原始 Skill 目录（唯一真实文件）
+        │
+        ├── symlink → Hermes/skills
+        ├── symlink → Codex/skills
+        ├── symlink → QwenWork/skills
+        └── symlink → WorkBuddy/skills
+```
 
-Hermes Skill Manager 的目标很简单：**让技能管理回到一个可见、可确认、可恢复的 Desktop 工作流里。**
+- **文件留在原地**：不会为了共享技能搬迁或复制源目录。
+- **任意已发现的真实 Skill 都能作为源**：Hermes、skills.sh、Codex、QwenWork、WorkBuddy 均可作为来源。
+- **目标 Agent 只保存软链接**：当前支持 Hermes、Codex、QwenWork、WorkBuddy。
+- **不会覆盖真实目录**：目标位置已有同名真实文件或目录时，即使强制确认也拒绝覆盖。
+- **解绑只删链接**：不会删除或修改源 Skill。
 
 ## 你会得到什么
 
-### 一个入口，管理四套技能生态
+### 一个入口，查看五套技能来源
 
-- **Hermes**：统一查看内建、社区和本地技能，支持来源、分类和全文搜索。
-- **QwenWork / 千问办公**：读取 `~/.qwenworkcn/skills`，自动排除应用内建技能，只展示可管理的自定义或导入技能。
-- **WorkBuddy**：读取 `~/.workbuddy/skills`，自动排除应用内建技能，只展示可管理的自定义或导入技能。
-- **Codex**：查看用户技能，并区分“同步于 Hermes”和“仅 Codex”的技能来源。
+- **Hermes**：内建、Skills Hub 社区和本地技能。
+- **skills.sh**：读取 `~/.agents/skills` 与全局 `.skill-lock.json` 元数据。
+- **QwenWork / 千问办公**：读取 `~/.qwenworkcn/skills`，排除应用内建技能。
+- **WorkBuddy**：读取 `~/.workbuddy/skills`，排除应用内建技能。
+- **Codex**：读取用户技能并隐藏 `.system` 系统技能。
 
-### 面向真实操作，而不是只做浏览器
+### Agent 链接
 
-| 来源 | 可用操作 |
+Desktop 侧边栏新增 **Agent 链接** 页面。它把所有可作为真实来源的 Skill 汇总到一张表中，并显示每个目标 Agent 的绑定状态：
+
+| 状态 | 含义 | 操作 |
+|---|---|---|
+| 原始位置 | Skill 本来就属于这个 Agent | 不操作 |
+| 未链接 | 目标目录没有同名项 | 创建软链接 |
+| 已链接 | 已指向当前源 Skill | 点击解绑 |
+| 其他链接 | 同名软链接指向别处 | 输入完整技能名后重新绑定 |
+| 断开的链接 | 同名软链接目标已失效 | 输入完整技能名后重新绑定 |
+| 同名真实目录占用 | 目标存在真实文件/目录 | 拒绝自动覆盖 |
+
+例如，一个 QwenWork 中的真实 Skill 可以直接链接到 Hermes 和 Codex；Hermes 本地 Skill 可以同时链接到 Codex、QwenWork 和 WorkBuddy。插件禁止把 Skill 链接回自己的来源 Agent。
+
+### 原有管理能力继续保留
+
+| 来源 | 原有操作 |
 |---|---|
-| Hermes 内建技能 | 重置、删除、恢复、同步到 Codex |
-| Hermes 社区技能 | 重置、更新、删除、同步到 Codex |
-| Hermes 本地技能 | 删除、同步到 Codex |
-| QwenWork 技能 | 搜索、分类、查看详情、安全删除 |
-| WorkBuddy 技能 | 搜索、分类、查看详情、安全删除 |
-| Codex 用户技能 | 查看来源、删除 |
+| Hermes 内建技能 | 重置、删除、恢复 |
+| Hermes 社区技能 | 重置、更新、删除 |
+| Hermes 本地技能 | 删除 |
+| skills.sh | 搜索、分类、查看来源元数据 |
+| QwenWork | 搜索、分类、查看详情、安全删除 |
+| WorkBuddy | 搜索、分类、查看详情、安全删除 |
+| Codex | 查看、删除用户技能 |
 
-删除、重置和覆盖 Codex 技能等高风险操作会要求输入完整技能名确认。执行过程按“确认 → 执行 → 刷新”展示进度，并在当前技能行同步显示结果。
-
-### 原生 Hermes Desktop 体验
-
-- Desktop 侧边栏页面与 `⌘K` 命令入口。
-- 紧凑表格布局，一级分段切换 Hermes、QwenWork、WorkBuddy 与 Codex。
-- 行操作直接显示，不隐藏在下拉菜单中。
-- 支持中英文界面、响应式布局和 Hermes Desktop 主题。
-- 技能详情支持 `Esc` 关闭、焦点锁定与返回。
-- 页面顶部可直接更新插件；Desktop 入口支持热加载。
+原来的 Hermes → Codex **同步**接口仍然兼容，但实现已经从复制目录改为创建软链接。
 
 ## 快速开始
 
-仓库同时包含 Desktop UI 和 Python 后端。先安装并启用插件后端：
+先安装并启用后端：
 
 ```bash
 hermes plugins install iPotatow/hermes-skill-manager
 hermes plugins enable skill-manager
 ```
 
-再安装 Desktop 入口：
+再安装 Desktop 文件。`1.11.0` 起 Desktop 入口拆成 `plugin.js` 与 `plugin-core.js` 两个未编译 ESM 文件，因此两者都需要复制：
 
 ```bash
 HERMES_DIR="${HERMES_HOME:-$HOME/.hermes}"
 mkdir -p "$HERMES_DIR/desktop-plugins/skill-manager"
 cp desktop-plugins/skill-manager/plugin.js \
-  "$HERMES_DIR/desktop-plugins/skill-manager/plugin.js"
+   desktop-plugins/skill-manager/plugin-core.js \
+   "$HERMES_DIR/desktop-plugins/skill-manager/"
 ```
 
-完成后重启 Hermes gateway。若侧边栏没有出现“技能管理”，按 `⌘K` 运行 **Reload desktop plugins**。
+完成后重启 Hermes gateway。若侧边栏没有出现页面，按 `⌘K` 运行 **Reload desktop plugins**。
 
 插件 ID：`skill-manager`  
-Desktop 路径：`/skill-manager`
+原管理页：`/skill-manager`  
+Agent 链接页：`/skill-manager/links`
 
-## 工作方式
+## 软链接如何工作
 
-Hermes Skill Manager 不注册 Hermes Dashboard 页面。Dashboard manifest 只挂载后端 API，真正的交互界面由 Hermes Desktop 原生插件提供。
+假设真实技能位于：
 
-Hermes 主视图把内建、社区和本地技能作为同一级来源展示；QwenWork、WorkBuddy 和 Codex 使用独立一级视图。QwenWork 或 WorkBuddy 没有可管理技能时，对应视图会自动隐藏。
+```text
+~/.qwenworkcn/skills/pdf
+```
 
-Hermes 内建技能的中文简介来自 [Hermes 官方中文技能目录](https://hermes-agent.nousresearch.com/docs/zh-Hans/reference/skills-catalog)。GitHub Actions 每周同步官方中文文档并保存离线快照；如果官方译文缺失，会阻止错误快照提交。
+选择“链接到 Codex”后，插件创建：
 
-## 同步到 Codex
+```text
+~/.codex/skills/pdf -> ~/.qwenworkcn/skills/pdf
+```
 
-Hermes 的内建、社区和本地技能都可以一键同步到 Codex 用户技能目录。
+此后修改 QwenWork 原目录中的 `SKILL.md`、脚本或引用文件，Codex 立即看到同一份内容，不需要再次同步。
 
-同步时会：
-
-- 验证源路径和目标路径，拒绝路径逃逸、符号链接与特殊文件。
-- 通过临时目录原子替换目标，避免留下半完成状态。
-- 在覆盖已有 Codex 技能前要求输入完整技能名确认。
-- 在 Codex 视图中标记同步来源，区分“同步于 Hermes”和“仅 Codex”。
-- 隐藏 Codex `.system` 系统技能，只管理用户技能。
+如果点击“解绑 Codex”，插件只执行目标软链接的 `unlink`；`~/.qwenworkcn/skills/pdf` 不会被删除或改写。
 
 ## 安全边界
 
-文件操作会验证目标位于当前 Hermes profile 的技能目录内，并拒绝路径任一层的符号链接。
+软链接操作遵循以下规则：
 
-删除操作会物理移除技能目录，当前版本**不会创建备份**。删除社区技能时，插件还会清理当前发现到的残留副本并刷新发现缓存，避免残留目录重新被识别成本地技能。
+- 源必须是插件已经发现的真实 Skill 目录，并包含有效 `SKILL.md`。
+- 不允许用任意用户输入路径作为源，避免路径逃逸。
+- 目标只允许是已知 Agent skills 根目录下的直接子项。
+- 同名真实文件或目录永不自动删除或覆盖。
+- 同名软链接指向其他位置时，必须输入完整 Skill 名确认后才能重新绑定。
+- 解绑前再次确认目标确实指向当前源 Skill，只删除链接本身。
+- `skills.sh` 的 canonical 目录和 lock file 仍保持只读 ownership；创建 Agent 链接不会改写其 lock file。
 
-操作历史保存在：
+普通“删除技能”仍然是来源生态自己的物理删除操作，当前版本不会创建备份；它与“解绑软链接”是两个完全不同的动作。
 
-```text
-$HERMES_HOME/state/plugins/skill-manager.json
-```
+## 插件更新
 
-新版本兼容读取旧插件状态文件。第三方 Hermes 插件会执行本地代码，请只安装可信来源。
+页面顶部仍可点击“更新插件”。更新器会先更新 Git checkout，再原子同步 Desktop 文件；如果存在 `plugin-core.js`，会先复制 companion 文件，最后替换 `plugin.js`，避免热加载时出现缺失 import。
 
-## 更新插件
-
-安装完成后，可以直接点击页面顶部的“更新插件”。确认后，Hermes 会通过插件安装目录中的 Git 仓库拉取最新版本，并原子同步 Desktop 入口。
-
-- 只有 Desktop 文件变化时，可直接热加载。
-- Python 后端发生变化后，仍需重启 Hermes gateway。
-- 如果安装目录存在与远端更新冲突的未提交修改，Git 会停止更新，界面会显示原始错误，不会强行覆盖本地内容。
-
-## 从 1.4.1 或更早版本迁移
-
-仓库已迁移到 `iPotatow/hermes-skill-manager`，插件 ID 也已改为 `skill-manager`。旧 ID 无法通过普通热更新完成重命名，需要执行一次新安装：
-
-```bash
-hermes plugins disable desktop-skill-manager
-hermes plugins install iPotatow/hermes-skill-manager
-hermes plugins enable skill-manager
-```
-
-然后按“快速开始”中的命令安装新的 Desktop 入口并重启 Hermes gateway。新状态文件会自动读取旧插件的操作历史。
+Python 后端发生变化后仍需重启 Hermes gateway。
 
 ## 架构
 
 ```text
-desktop-plugins/skill-manager/plugin.js          # 原生 Desktop UI
-dashboard/manifest.json                         # 后端挂载声明，不注册 Dashboard 页面
-dashboard/plugin_api.py                         # FastAPI 请求适配与错误转换
-dashboard/skill_manager/                        # 技能发现、文件操作、同步、状态与业务流程
-dashboard/data/builtin_catalog.json             # 官方中文内建技能目录离线快照
-scripts/sync_builtin_catalog.py                 # 官方目录快照同步工具
-.github/workflows/sync-skill-translations.yml  # 每周同步官方中文快照
+desktop-plugins/skill-manager/plugin.js          # Agent Links 扩展入口
+desktop-plugins/skill-manager/plugin-core.js     # 原 Skill Manager Desktop UI
+dashboard/manifest.json                         # 后端挂载声明
+dashboard/plugin_api.py                         # FastAPI 请求适配
+dashboard/skill_manager/filesystem.py           # 安全路径、原子文件操作、软链接原语
+dashboard/skill_manager/service.py              # 来源解析、绑定/解绑、业务流程
+dashboard/skill_manager/inventory.py            # 各生态技能发现
+dashboard/skill_manager/skills_sh.py            # skills.sh 只读发现与 lock 元数据
 tests/                                          # Desktop 与后端测试
 ```
-
-`plugin.js` 按 Hermes Desktop 约束保持为单个未编译 ESM 文件。`plugin_api.py` 只负责 FastAPI 请求适配和错误转换，实际技能发现、运行时调用、状态与文件操作分别位于 `dashboard/skill_manager/`。
-
-每个 API 请求都会重新解析 Hermes profile 路径；状态写入和 Codex 同步分别使用进程级锁，避免并发请求覆盖操作历史或同步结果。
 
 ## 验证
 
 ```bash
 node --check desktop-plugins/skill-manager/plugin.js
+node --check desktop-plugins/skill-manager/plugin-core.js
 node --test tests/desktop_plugin_smoke.test.js
 python3 -m unittest discover -s tests -v
 ```
