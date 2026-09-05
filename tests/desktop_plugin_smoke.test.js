@@ -3,8 +3,10 @@ const fs = require('node:fs')
 const path = require('node:path')
 const test = require('node:test')
 
-const pluginPath = path.join(__dirname, '..', 'desktop-plugins', 'skill-manager', 'plugin.js')
+const pluginPath = path.join(__dirname, '..', 'desktop-plugins', 'skill-manager', 'plugin-core.js')
 const source = fs.readFileSync(pluginPath, 'utf8')
+const entryPath = path.join(__dirname, '..', 'desktop-plugins', 'skill-manager', 'plugin.js')
+const entrySource = fs.readFileSync(entryPath, 'utf8')
 
 test('desktop plugin stays within the uncompiled runtime contract', () => {
   const imports = [...source.matchAll(/from\s+['"]([^'"]+)['"]/g)].map(match => match[1])
@@ -195,4 +197,18 @@ test('paths stay hidden while drawers preserve keyboard focus and copyable ident
 test('desktop plugin avoids hard-coded color literals', () => {
   assert.doesNotMatch(source, /#[0-9a-f]{3,8}\b/i)
   assert.doesNotMatch(source, /\b(?:rgb|hsl)a?\s*\(/i)
+})
+
+test('desktop entry keeps the original manager and adds cross-agent symlink bindings', () => {
+  assert.match(entrySource, /import core from '\.\/plugin-core\.js'/)
+  assert.match(entrySource, /const LINKS_ROUTE = '\/skill-manager\/links'/)
+  assert.match(entrySource, /target_agent: agent/)
+  assert.match(entrySource, /pluginContext\.rest\('\/link-agent'/)
+  assert.match(entrySource, /id: 'codex'/)
+  assert.match(entrySource, /id: 'qwenwork'/)
+  assert.match(entrySource, /id: 'workbuddy'/)
+  assert.match(entrySource, /core\.register\(ctx\)/)
+  assert.match(entrySource, /ctx\.registerMany\(\[/)
+  assert.match(entrySource, /输入完整技能名/)
+  assert.doesNotMatch(entrySource, /#[0-9a-f]{3,8}\b/i)
 })
