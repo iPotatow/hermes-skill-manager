@@ -99,18 +99,32 @@ class HermesRuntime:
 
     @staticmethod
     def update_plugin(name: str, plugin_root: Path, desktop_entry: Path) -> dict[str, Any]:
-        """Update the checkout through Hermes, then hot-sync its Desktop entry."""
+        """Update the checkout through Hermes, then hot-sync Desktop entries."""
 
         from hermes_cli.plugins_cmd import dashboard_update_user_plugin
 
-        source = plugin_root / "desktop-plugins" / name / "plugin.js"
-        preflight_copy_file(source, desktop_entry)
+        source_dir = plugin_root / "desktop-plugins" / name
+        source_entry = source_dir / "plugin.js"
+        # Preflight the currently installed entry before mutating the checkout.
+        preflight_copy_file(source_entry, desktop_entry)
         result = dashboard_update_user_plugin(name)
         if not result.get("ok"):
             raise SkillManagerError(400, result.get("error", "插件更新失败"))
 
+        # Newer versions may split immutable UI code into companion modules.
+        # Validate all companions after the checkout update, then copy companions
+        # first and the entry last so hot reload never observes a missing import.
+        copies: list[tuple[Path, Path]] = []
+        companion = source_dir / "plugin-core.js"
+        if companion.is_file():
+            companion_target = desktop_entry.parent / companion.name
+            preflight_copy_file(companion, companion_target)
+            copies.append((companion, companion_target))
+        copies.append((source_entry, desktop_entry))
+
         try:
-            copy_file_atomic(source, desktop_entry)
+            for source, target in copies:
+                copy_file_atomic(source, target)
         except Exception as exc:
             raise SkillManagerError(
                 500,
@@ -119,5 +133,6 @@ class HermesRuntime:
         return {
             **result,
             "desktopPath": str(desktop_entry),
+            "desktopPaths": [str(target) for _source, target in copies],
             "restartRequired": not bool(result.get("unchanged")),
         }
