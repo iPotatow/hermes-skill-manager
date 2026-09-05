@@ -1,4 +1,4 @@
-"""Safe filesystem primitives for Hermes and Codex skill trees."""
+"""Safe filesystem primitives for Hermes and agent skill trees."""
 
 from __future__ import annotations
 
@@ -85,6 +85,28 @@ def safe_named_descendant(root: Path, name: str, detail: str, create_root: bool 
     return safe_descendant(expanded_root, name, detail)
 
 
+def safe_link_target(root: Path, name: str, detail: str, create_root: bool = False) -> Path:
+    """Return a direct child that may itself be a symlink.
+
+    ``safe_descendant`` intentionally rejects symlinks, which is correct for
+    destructive file operations but prevents us from inspecting or replacing a
+    managed agent binding. This helper validates the root and child name while
+    deliberately leaving the final path unresolved.
+    """
+
+    if not name or name in {".", ".."} or Path(name).name != name or "/" in name or "\\" in name:
+        raise SkillManagerError(400, detail)
+
+    expanded_root = Path(root).expanduser()
+    if create_root:
+        expanded_root.mkdir(parents=True, exist_ok=True)
+    if expanded_root.exists() and not expanded_root.is_dir():
+        raise SkillManagerError(400, detail)
+
+    resolved_root = expanded_root.resolve()
+    return resolved_root / name
+
+
 def validate_sync_source(source: Path) -> None:
     if source.is_symlink() or not source.is_dir() or not (source / "SKILL.md").is_file():
         raise SkillManagerError(400, "Hermes 技能缺少 SKILL.md，无法同步到 Codex")
@@ -95,8 +117,62 @@ def validate_sync_source(source: Path) -> None:
             raise SkillManagerError(400, f"技能包含不支持的特殊文件：{item.name}")
 
 
+def validate_link_source(source: Path) -> Path:
+    """Validate and canonicalize a skill directory used as a symlink source."""
+
+    candidate = Path(source).expanduser()
+    try:
+        resolved = candidate.resolve(strict=True)
+    except (OSError, RuntimeError) as exc:
+        raise SkillManagerError(400, "技能源目录不存在，无法创建软链接") from exc
+
+    skill_md = resolved / "SKILL.md"
+    if not resolved.is_dir() or skill_md.is_symlink() or not skill_md.is_file():
+        raise SkillManagerError(400, "技能源目录缺少有效的 SKILL.md，无法创建软链接")
+    return resolved
+
+
+def link_skill(source: Path, target: Path, force: bool = False) -> bool:
+    """Bind an agent skill directory to the original skill using a symlink.
+
+    The source is never moved or copied. Existing real files/directories are
+    never replaced, even with ``force``; force only permits replacing an
+    existing symlink that points somewhere else.
+
+    Returns ``True`` when a new link is created and ``False`` when the target
+    already points at the requested source.
+    """
+
+    source = validate_link_source(source)
+    target = Path(target)
+    target.parent.mkdir(parents=True, exist_ok=True)
+
+    if target.is_symlink():
+        existing = target.resolve(strict=False)
+        if existing == source:
+            return False
+        if not force:
+            raise SkillManagerError(409, "目标 Agent 已存在同名软链接；确认覆盖后才能重新绑定")
+        target.unlink()
+    elif target.exists():
+        raise SkillManagerError(
+            409,
+            "目标 Agent 已存在同名真实文件或目录；为避免破坏原有技能，不会自动覆盖",
+        )
+
+    try:
+        os.symlink(source, target, target_is_directory=True)
+    except OSError as exc:
+        raise SkillManagerError(500, f"创建技能软链接失败：{exc}") from exc
+    return True
+
+
 def copy_skill(source: Path, target: Path, force: bool = False) -> None:
-    """Atomically install a complete Hermes skill into Codex."""
+    """Atomically install a complete Hermes skill into Codex.
+
+    Kept for backwards compatibility and tests. Agent sharing now uses
+    :func:`link_skill` instead so the original skill remains the source of truth.
+    """
 
     validate_sync_source(source)
     if target.is_symlink():
