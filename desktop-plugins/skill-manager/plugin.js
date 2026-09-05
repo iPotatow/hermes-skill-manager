@@ -100,6 +100,31 @@ function parseError(error) {
   }
 }
 
+function actionBody(row, agent, confirm = '', force = false) {
+  return {
+    source: sourceOf(row),
+    name: row.name,
+    relative_path: relativeOf(row),
+    target_agent: agent,
+    ...(confirm ? { confirm } : {}),
+    force
+  }
+}
+
+function linkAgent(row, agent, confirm = '', force = false) {
+  return pluginContext.rest('/link-agent', {
+    method: 'POST',
+    body: actionBody(row, agent, confirm, force)
+  })
+}
+
+function unlinkAgent(row, agent) {
+  return pluginContext.rest('/unlink-agent', {
+    method: 'POST',
+    body: actionBody(row, agent)
+  })
+}
+
 function ConfirmRebind({ busy, pending, onCancel, onConfirm }) {
   const [value, setValue] = useState('')
   if (!pending) return null
@@ -153,19 +178,10 @@ function AgentLinksPage() {
     retry: 2
   })
   const mutation = useMutation({
-    mutationFn: ({ action = 'link', row, agent, confirm = '', force = false }) => pluginContext.rest(
-      action === 'unlink' ? '/unlink-agent' : '/link-agent',
-      {
-        method: 'POST',
-        body: {
-          source: sourceOf(row),
-          name: row.name,
-          relative_path: relativeOf(row),
-          target_agent: agent,
-          ...(confirm ? { confirm } : {}),
-          force
-        }
-      }
+    mutationFn: ({ action = 'link', row, agent, confirm = '', force = false }) => (
+      action === 'unlink'
+        ? unlinkAgent(row, agent)
+        : linkAgent(row, agent, confirm, force)
     ),
     onSuccess: async (data, variables) => {
       setPending(null)
