@@ -56,6 +56,7 @@ class SkillAction(BaseModel):
     name: str = ""
     confirm: str = ""
     relative_path: str = ""
+    target_agent: str = ""
     force: bool = False
 
 
@@ -121,6 +122,7 @@ def delete_qwen_skill(action: SkillAction) -> dict[str, Any]:
         action.confirm,
     ))
 
+
 @router.post("/delete-workbuddy")
 def delete_workbuddy_skill(action: SkillAction) -> dict[str, Any]:
     return _run(lambda: _manager().delete_workbuddy(
@@ -128,6 +130,38 @@ def delete_workbuddy_skill(action: SkillAction) -> dict[str, Any]:
         action.relative_path,
         action.confirm,
     ))
+
+
+@router.post("/link-agent")
+def link_skill_to_agent(action: SkillAction) -> dict[str, Any]:
+    return _run(lambda: _manager().link_agent(
+        action.source,
+        action.name,
+        action.target_agent,
+        getattr(action, "confirm", ""),
+        getattr(action, "force", False),
+    ))
+
+
+@router.post("/link-qwen")
+def link_skill_to_qwenwork(action: SkillAction) -> dict[str, Any]:
+    return _run(lambda: _manager().link_qwenwork(
+        action.source,
+        action.name,
+        getattr(action, "confirm", ""),
+        getattr(action, "force", False),
+    ))
+
+
+@router.post("/link-workbuddy")
+def link_skill_to_workbuddy(action: SkillAction) -> dict[str, Any]:
+    return _run(lambda: _manager().link_workbuddy(
+        action.source,
+        action.name,
+        getattr(action, "confirm", ""),
+        getattr(action, "force", False),
+    ))
+
 
 @router.post("/sync-codex")
 def sync_skill_to_codex(action: SkillAction) -> dict[str, Any]:
