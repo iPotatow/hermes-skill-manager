@@ -12,6 +12,7 @@ const ID = 'skill-manager'
 const LINKS_ROUTE = '/skill-manager/links'
 const QUERY_KEY = [ID, 'inventory']
 const TARGETS = [
+  { id: 'hermes', label: 'Hermes' },
   { id: 'codex', label: 'Codex' },
   { id: 'qwenwork', label: 'QwenWork' },
   { id: 'workbuddy', label: 'WorkBuddy' }
@@ -19,9 +20,11 @@ const TARGETS = [
 
 let pluginContext
 
-const sourceOf = row => row.kind || row.source || 'local'
-const linkable = row => ['builtin', 'hub-installed', 'local'].includes(sourceOf(row))
-  && row.status !== 'deleted'
+const asArray = value => Array.isArray(value) ? value : []
+const sourceOf = row => row.linkSource || row.kind || row.source || 'local'
+const originOf = row => row.originAgent || 'hermes'
+const relativeOf = row => row.linkRelativePath || row.relativePath || row.installPath || ''
+const linkable = row => row.linkable === true
 
 function strings() {
   const zh = pluginContext?.i18n?.t?.('language') === 'zh'
@@ -29,44 +32,60 @@ function strings() {
     nav: 'Agent 链接',
     open: '打开 Agent 链接',
     title: 'Agent 技能链接',
-    subtitle: '技能文件保留在 Hermes 原目录，仅在其他 Agent 的 skills 目录创建软链接。',
-    search: '搜索 Hermes 技能',
-    skill: '技能',
-    target: '链接到 Agent',
-    empty: '没有可链接的 Hermes 技能',
+    subtitle: '技能文件始终留在原目录；其他 Agent 只创建目录软链接，不复制技能内容。',
+    search: '搜索所有已发现技能',
+    skill: '技能 / 原始位置',
+    target: '共享到 Agent',
+    empty: '没有可共享的真实技能目录',
     retry: '重试',
     loadError: '无法加载技能清单',
     confirmTitle: '重新绑定软链接',
-    confirmBody: (name, agent) => `${agent} 已存在同名软链接。输入完整技能名 ${name} 以重新绑定。`,
+    confirmBody: (name, agent) => `${agent} 已存在其他同名软链接。输入完整技能名 ${name} 以重新绑定。`,
     confirmPlaceholder: '输入完整技能名',
     cancel: '取消',
     confirm: '重新绑定',
-    linking: '链接中…',
+    linking: '处理中…',
     linked: (name, agent, unchanged) => unchanged
       ? `${name} 已经链接到 ${agent}`
       : `${name} 已链接到 ${agent}`,
-    conflict: '目标已有其他软链接，需要确认后重新绑定。'
+    unlinked: (name, agent) => `${name} 已从 ${agent} 解绑，源文件未改动`,
+    states: {
+      self: '原始位置',
+      linked: '已链接 · 点击解绑',
+      absent: '创建链接',
+      occupied: '同名真实目录占用',
+      conflict: '其他链接 · 点击重绑',
+      broken: '断开的链接 · 点击重绑'
+    }
   } : {
     nav: 'Agent Links',
     open: 'Open Agent Links',
     title: 'Agent Skill Links',
-    subtitle: 'Keep skill files in Hermes and expose them to other agents with directory symlinks.',
-    search: 'Search Hermes skills',
-    skill: 'Skill',
-    target: 'Link to agent',
-    empty: 'No linkable Hermes skills',
+    subtitle: 'Skill files stay where they are; other agents receive directory symlinks instead of copies.',
+    search: 'Search all discovered skills',
+    skill: 'Skill / origin',
+    target: 'Share to agent',
+    empty: 'No real skill directories available for sharing',
     retry: 'Retry',
     loadError: 'Unable to load skill inventory',
     confirmTitle: 'Rebind symlink',
-    confirmBody: (name, agent) => `${agent} already has a symlink with this name. Type ${name} to rebind it.`,
+    confirmBody: (name, agent) => `${agent} already has another symlink with this name. Type ${name} to rebind it.`,
     confirmPlaceholder: 'Type the exact skill name',
     cancel: 'Cancel',
     confirm: 'Rebind',
-    linking: 'Linking…',
+    linking: 'Working…',
     linked: (name, agent, unchanged) => unchanged
       ? `${name} is already linked to ${agent}`
       : `${name} linked to ${agent}`,
-    conflict: 'The target has another symlink. Confirm the exact skill name to rebind it.'
+    unlinked: (name, agent) => `${name} unlinked from ${agent}; source files were not changed`,
+    states: {
+      self: 'Origin',
+      linked: 'Linked · click to unlink',
+      absent: 'Create link',
+      occupied: 'Real directory occupies name',
+      conflict: 'Other link · click to rebind',
+      broken: 'Broken link · click to rebind'
+    }
   }
 }
 
@@ -134,30 +153,36 @@ function AgentLinksPage() {
     retry: 2
   })
   const mutation = useMutation({
-    mutationFn: ({ row, agent, confirm = '', force = false }) => pluginContext.rest('/link-agent', {
-      method: 'POST',
-      body: {
-        source: sourceOf(row),
-        name: row.name,
-        target_agent: agent,
-        ...(confirm ? { confirm } : {}),
-        force
+    mutationFn: ({ action = 'link', row, agent, confirm = '', force = false }) => pluginContext.rest(
+      action === 'unlink' ? '/unlink-agent' : '/link-agent',
+      {
+        method: 'POST',
+        body: {
+          source: sourceOf(row),
+          name: row.name,
+          relative_path: relativeOf(row),
+          target_agent: agent,
+          ...(confirm ? { confirm } : {}),
+          force
+        }
       }
-    }),
+    ),
     onSuccess: async (data, variables) => {
       setPending(null)
       await queryClient.invalidateQueries({ queryKey: QUERY_KEY }).catch(() => {})
       const target = TARGETS.find(item => item.id === variables.agent)?.label || variables.agent
       host.notify({
         kind: 'success',
-        message: t.linked(variables.row.name, target, Boolean(data?.unchanged))
+        message: variables.action === 'unlink'
+          ? t.unlinked(variables.row.name, target)
+          : t.linked(variables.row.name, target, Boolean(data?.unchanged))
       })
     },
     onError: (error, variables) => {
       const payload = parseError(error)
-      if (!variables.force && payload.status === 409 && /软链接|symlink/i.test(String(payload.detail))) {
+      if (variables.action !== 'unlink' && !variables.force && payload.status === 409
+        && /软链接|symlink/i.test(String(payload.detail))) {
         setPending({ row: variables.row, agent: variables.agent })
-        host.notify({ kind: 'warning', message: t.conflict })
         return
       }
       host.notify({ kind: 'error', message: String(payload.detail || error) })
@@ -165,13 +190,40 @@ function AgentLinksPage() {
   })
 
   const rows = useMemo(() => {
+    const data = inventory.data || {}
     const needle = query.trim().toLowerCase()
-    return (Array.isArray(inventory.data?.skills) ? inventory.data.skills : [])
+    return [
+      ...asArray(data.skills),
+      ...asArray(data.skillsShSkills),
+      ...asArray(data.codexSkills),
+      ...asArray(data.qwenworkSkills),
+      ...asArray(data.workbuddySkills)
+    ]
       .filter(linkable)
-      .filter(row => !needle || [row.name, row.description, row.category, row.source]
-        .join('\n').toLowerCase().includes(needle))
-      .sort((left, right) => String(left.name).localeCompare(String(right.name)))
+      .filter(row => !needle || [
+        row.name, row.description, row.category, row.source,
+        row.linkSource, row.originAgent
+      ].join('\n').toLowerCase().includes(needle))
+      .sort((left, right) => (
+        String(left.name).localeCompare(String(right.name))
+        || String(originOf(left)).localeCompare(String(originOf(right)))
+        || String(relativeOf(left)).localeCompare(String(relativeOf(right)))
+      ))
   }, [inventory.data, query])
+
+  const runTargetAction = (row, target) => {
+    const state = row.agentLinks?.[target.id] || 'absent'
+    if (state === 'self' || state === 'occupied') return
+    if (state === 'linked') {
+      mutation.mutate({ action: 'unlink', row, agent: target.id })
+      return
+    }
+    if (state === 'conflict' || state === 'broken') {
+      setPending({ row, agent: target.id })
+      return
+    }
+    mutation.mutate({ action: 'link', row, agent: target.id })
+  }
 
   if (inventory.isPending) {
     return jsx('div', { className: 'grid h-full place-items-center', children: jsx(GlyphSpinner, {}) })
@@ -202,14 +254,20 @@ function AgentLinksPage() {
           onChange: event => setQuery(event.target.value)
         }),
         jsx(ConfirmRebind, {
+          key: pending ? `${sourceOf(pending.row)}:${relativeOf(pending.row)}:${pending.agent}` : 'none',
           busy: mutation.isPending,
           pending,
           onCancel: () => setPending(null),
-          onConfirm: confirm => mutation.mutate({ ...pending, confirm, force: true })
+          onConfirm: confirm => mutation.mutate({
+            action: 'link',
+            ...pending,
+            confirm,
+            force: true
+          })
         }),
         rows.length ? jsx('div', {
           className: 'overflow-x-auto rounded-sm border border-(--ui-stroke-secondary)',
-          children: jsxs('table', { className: 'w-full min-w-[42rem] table-fixed border-collapse text-sm', children: [
+          children: jsxs('table', { className: 'w-full min-w-[60rem] table-fixed border-collapse text-sm', children: [
             jsx('thead', {
               className: 'bg-(--ui-bg-secondary) text-left text-xs text-(--ui-text-tertiary)',
               children: jsx('tr', { children: [
@@ -226,8 +284,8 @@ function AgentLinksPage() {
                     jsx('div', { className: 'break-all font-medium', children: row.name }),
                     jsx('div', {
                       className: 'mt-0.5 truncate text-xs text-(--ui-text-secondary)',
-                      title: row.description || '',
-                      children: row.description || sourceOf(row)
+                      title: `${originOf(row)} · ${relativeOf(row)}`,
+                      children: `${originOf(row)} · ${row.description || relativeOf(row)}`
                     })
                   ] })
                 }),
@@ -235,19 +293,23 @@ function AgentLinksPage() {
                   className: 'px-3 py-2 align-middle',
                   children: jsx('div', {
                     className: 'flex flex-wrap justify-end gap-2',
-                    children: TARGETS.map(target => jsx(Button, {
-                      disabled: mutation.isPending,
-                      size: 'sm',
-                      variant: 'secondary',
-                      onClick: () => mutation.mutate({ row, agent: target.id }),
-                      children: jsxs(Fragment, { children: [
-                        jsx(Codicon, { name: 'link' }),
-                        ` ${target.label}`
-                      ] })
-                    }, target.id))
+                    children: TARGETS.map(target => {
+                      const state = row.agentLinks?.[target.id] || 'absent'
+                      return jsx(Button, {
+                        disabled: mutation.isPending || state === 'self' || state === 'occupied',
+                        size: 'sm',
+                        variant: state === 'linked' ? 'default' : 'secondary',
+                        title: t.states[state] || state,
+                        onClick: () => runTargetAction(row, target),
+                        children: jsxs(Fragment, { children: [
+                          jsx(Codicon, { name: state === 'linked' ? 'close' : 'link' }),
+                          ` ${target.label} · ${t.states[state] || state}`
+                        ] })
+                      }, target.id)
+                    })
                   })
                 })
-              ] }, `${sourceOf(row)}:${row.name}`))
+              ] }, `${sourceOf(row)}:${relativeOf(row)}:${row.name}`))
             })
           ] })
         }) : jsx(EmptyState, { title: t.empty })
