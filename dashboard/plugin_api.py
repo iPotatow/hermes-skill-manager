@@ -34,7 +34,6 @@ except Exception:  # pragma: no cover - source-only environments
                 setattr(self, key, value)
 
 
-# spec_from_file_location does not guarantee that this directory is importable.
 _DASHBOARD_DIR = Path(__file__).resolve().parent
 _ADDED_DASHBOARD_PATH = str(_DASHBOARD_DIR) not in sys.path
 if _ADDED_DASHBOARD_PATH:
@@ -78,8 +77,6 @@ async def inventory() -> dict[str, Any]:
     return _run(lambda: _manager().inventory())
 
 
-# Mutation handlers intentionally use ``def`` so FastAPI dispatches blocking
-# Hub, Git, and filesystem work through its thread pool instead of the event loop.
 @router.post("/delete")
 def delete_skill(action: SkillAction) -> dict[str, Any]:
     return _run(lambda: _manager().delete(action.source, action.name, action.confirm))
@@ -107,29 +104,17 @@ def update_plugin(action: SkillAction) -> dict[str, Any]:
 
 @router.post("/delete-codex")
 def delete_codex_skill(action: SkillAction) -> dict[str, Any]:
-    return _run(lambda: _manager().delete_codex(
-        action.name,
-        action.relative_path,
-        action.confirm,
-    ))
+    return _run(lambda: _manager().delete_codex(action.name, action.relative_path, action.confirm))
 
 
 @router.post("/delete-qwen")
 def delete_qwen_skill(action: SkillAction) -> dict[str, Any]:
-    return _run(lambda: _manager().delete_qwenwork(
-        action.name,
-        action.relative_path,
-        action.confirm,
-    ))
+    return _run(lambda: _manager().delete_qwenwork(action.name, action.relative_path, action.confirm))
 
 
 @router.post("/delete-workbuddy")
 def delete_workbuddy_skill(action: SkillAction) -> dict[str, Any]:
-    return _run(lambda: _manager().delete_workbuddy(
-        action.name,
-        action.relative_path,
-        action.confirm,
-    ))
+    return _run(lambda: _manager().delete_workbuddy(action.name, action.relative_path, action.confirm))
 
 
 @router.post("/link-agent")
@@ -138,8 +123,19 @@ def link_skill_to_agent(action: SkillAction) -> dict[str, Any]:
         action.source,
         action.name,
         action.target_agent,
+        getattr(action, "relative_path", ""),
         getattr(action, "confirm", ""),
         getattr(action, "force", False),
+    ))
+
+
+@router.post("/unlink-agent")
+def unlink_skill_from_agent(action: SkillAction) -> dict[str, Any]:
+    return _run(lambda: _manager().unlink_agent(
+        action.source,
+        action.name,
+        action.target_agent,
+        getattr(action, "relative_path", ""),
     ))
 
 
