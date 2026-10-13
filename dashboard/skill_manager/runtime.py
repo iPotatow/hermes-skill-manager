@@ -21,17 +21,15 @@ class HermesRuntime:
         except Exception:
             pass
         try:
-            from tools import skills_tool
+            from tools.skills_tool import clear_skills_cache
 
-            discovery_cache = getattr(skills_tool, "_SKILLS_CACHE", None)
-            if hasattr(discovery_cache, "clear"):
-                discovery_cache.clear()
+            clear_skills_cache()
         except Exception:
             pass
 
     @staticmethod
     def uninstall(name: str) -> None:
-        from tools.skills_hub import uninstall_skill
+        from tools.skills_hub_install import uninstall_skill
 
         ok, message = uninstall_skill(name)
         if not ok:
@@ -39,7 +37,7 @@ class HermesRuntime:
 
     @staticmethod
     def reset_builtin(name: str) -> dict[str, Any]:
-        from tools.skills_sync import reset_bundled_skill
+        from tools.skills_sync_bundled_ops import reset_bundled_skill
 
         result = reset_bundled_skill(name, restore=True)
         if not result.get("ok"):
@@ -71,14 +69,15 @@ class HermesRuntime:
 
     @staticmethod
     def restore_builtin(name: str) -> dict[str, Any]:
-        from tools.skills_sync import reset_bundled_skill
+        from tools.skills_sync_bundled_ops import reset_bundled_skill
 
         return reset_bundled_skill(name, restore=True)
 
     @staticmethod
     def update_hub(name: str) -> dict[str, Any]:
         from hermes_cli.skills_hub import do_update
-        from tools.skills_hub import HubLockFile, check_for_skill_updates
+        from tools.skills_hub import HubLockFile
+        from tools.skills_hub_install import check_for_skill_updates
 
         updates = check_for_skill_updates(name=name)
         if not updates:
@@ -101,9 +100,11 @@ class HermesRuntime:
     def update_plugin(name: str, plugin_root: Path, desktop_entry: Path) -> dict[str, Any]:
         """Update the checkout through Hermes, then hot-sync Desktop entries."""
 
-        from hermes_cli.plugins_cmd import dashboard_update_user_plugin
+        from hermes_cli.plugins_cmd_update import dashboard_update_user_plugin
 
-        source_dir = plugin_root / "desktop-plugins" / name
+        source_dir = plugin_root / "desktop"
+        if not source_dir.is_dir():  # migrate pre-unified installations
+            source_dir = plugin_root / "desktop-plugins" / name
         source_entry = source_dir / "plugin.js"
         # Preflight the currently installed entry before mutating the checkout.
         preflight_copy_file(source_entry, desktop_entry)
@@ -114,6 +115,11 @@ class HermesRuntime:
         # Newer versions may split immutable UI code into companion modules.
         # Validate all companions after the checkout update, then copy companions
         # first and the entry last so hot reload never observes a missing import.
+        source_dir = plugin_root / "desktop"
+        if not source_dir.is_dir():
+            source_dir = plugin_root / "desktop-plugins" / name
+        source_entry = source_dir / "plugin.js"
+        preflight_copy_file(source_entry, desktop_entry)
         copies: list[tuple[Path, Path]] = []
         companion = source_dir / "plugin-core.js"
         if companion.is_file():

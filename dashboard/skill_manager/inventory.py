@@ -406,10 +406,10 @@ class SkillInventory:
 
     def _description_from_disk(self, skill_dir: Path) -> str:
         try:
-            from tools.skills_tool import _parse_frontmatter
+            from agent.skill_utils import parse_frontmatter
 
             content = (skill_dir / "SKILL.md").read_text(encoding="utf-8")
-            frontmatter, _body = _parse_frontmatter(content)
+            frontmatter, _body = parse_frontmatter(content)
             return str(frontmatter.get("description", "") or "")
         except Exception:
             return ""

@@ -10,7 +10,7 @@ English · [简体中文](README.md)
 
 Hermes Skill Manager is a standalone Hermes Desktop plugin for viewing and maintaining Hermes, skills.sh, QwenWork, WorkBuddy, and Codex skills. Starting with `1.11.0`, the new **Agent Links** page keeps skill files in their original directories and exposes them to other agents with directory symlinks instead of copied skill trees.
 
-Version: `1.11.0`
+Version: `1.12.0`
 
 ## Core model
 
@@ -77,17 +77,9 @@ hermes plugins install iPotatow/hermes-skill-manager
 hermes plugins enable skill-manager
 ```
 
-Starting with `1.11.0`, the Desktop entry is split into two uncompiled ESM files, so install both:
+Version `1.12.0` uses the official unified package layout, `desktop/plugin.js`. Current Hermes Desktop copies the Desktop half automatically. Enable it in **Capabilities → Plugins** separately from the Python backend, restart the gateway, then **Rescan** or **Reload desktop plugins**.
 
-```bash
-HERMES_DIR="${HERMES_HOME:-$HOME/.hermes}"
-mkdir -p "$HERMES_DIR/desktop-plugins/skill-manager"
-cp desktop-plugins/skill-manager/plugin.js \
-   desktop-plugins/skill-manager/plugin-core.js \
-   "$HERMES_DIR/desktop-plugins/skill-manager/"
-```
-
-Restart the Hermes gateway. If the pages do not appear, run **Reload desktop plugins** from `⌘K`.
+A previous manually installed `desktop-plugins/skill-manager` folder may not be overwritten by the host. Replace its entry with the single `desktop/plugin.js`, or remove the old manual installation before Rescan. For remote gateways, use **Install from Git** to install the Desktop half on the local computer too.
 
 Plugin ID: `skill-manager`  
 Original manager route: `/skill-manager`  
@@ -127,15 +119,15 @@ Normal **Delete skill** operations still belong to each source ecosystem and can
 
 ## Updating the plugin
 
-The page-level **Update plugin** action remains available. The updater pulls the Git checkout and atomically synchronizes Desktop files. When `plugin-core.js` exists, companion modules are copied first and `plugin.js` is replaced last so hot reload never observes a missing import.
+The page-level **Update plugin** action pulls the checkout and atomically replaces the generated single-file Desktop entry, including migration from the old source layout.
 
 Python backend changes still require a Hermes gateway restart.
 
 ## Architecture
 
 ```text
-desktop-plugins/skill-manager/plugin.js          # Agent Links extension entry
-desktop-plugins/skill-manager/plugin-core.js     # original Skill Manager Desktop UI
+desktop/plugin.js          # Agent Links extension entry
+src/plugin-core.js         # original Skill Manager Desktop UI source
 dashboard/manifest.json                         # backend mount
 dashboard/plugin_api.py                         # FastAPI request adapter
 dashboard/skill_manager/filesystem.py           # safe paths, atomic operations, symlink primitives
@@ -148,8 +140,17 @@ tests/                                          # Desktop and backend tests
 ## Verification
 
 ```bash
-node --check desktop-plugins/skill-manager/plugin.js
-node --check desktop-plugins/skill-manager/plugin-core.js
-node --test tests/desktop_plugin_smoke.test.js
+python3 -m pip install -r requirements-test.txt
+node --check desktop/plugin.js
+python3 scripts/build_desktop.py --check
+node --test tests/*.test.js
 python3 -m unittest discover -s tests -v
 ```
+
+## Official contract and compatibility
+
+Reviewed against the [native plugin guide](https://hermes-agent.nousresearch.com/docs/developer-guide/plugins) and [Desktop SDK](https://hermes-agent.nousresearch.com/docs/developer-guide/desktop-plugin-sdk), upstream commit `09e2ffcab79322cdd9037660fe87004bbd8fd18f` (2026-10-13). The backend now imports mutation helpers from their post-decomposition defining modules. Skill discovery, Hub lock and bundled manifest helpers remain internal Hermes dependencies and require upgrade verification.
+
+Translation sync prefers official Chinese text, reviewed local fallbacks, then the existing snapshot. Future missing translations produce Actions warnings and `missingTranslations`; runtime falls back to original skill descriptions. `--strict` fails before writing an incomplete snapshot. Scheduled sync commits only to `dev`; promotion to `main` is a separate squash merge.
+
+After editing `src/`, run `python3 scripts/build_desktop.py`. CI checks that the shipped entry matches its sources. Installation requires no build step.

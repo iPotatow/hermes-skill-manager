@@ -4,10 +4,11 @@ on:
   workflow_dispatch:
   push:
     branches:
-      - main
+      - dev
     paths:
       - ".github/workflows/sync-skill-translations.yml"
       - "scripts/sync_builtin_catalog.py"
+      - "dashboard/data/builtin_catalog.json"
   schedule:
     - cron: "17 3 * * 1"
 
@@ -25,6 +26,8 @@ jobs:
     steps:
       - name: Check out skill manager
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: dev
 
       - name: Check out Hermes translation sources
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -50,4 +53,4 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add dashboard/data/builtin_catalog.json
           git commit -m "Sync official skill translations"
-          git push origin HEAD:main
+          git push origin HEAD:dev

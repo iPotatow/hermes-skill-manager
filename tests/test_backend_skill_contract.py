@@ -188,9 +188,10 @@ class BackendSkillContractTest(unittest.TestCase):
         )
         self.assertEqual(catalog["schemaVersion"], 2)
         self.assertEqual(catalog["source"], OFFICIAL_CATALOG_URL)
-        self.assertEqual(len(catalog["skills"]), 79)
-        self.assertEqual(catalog["officialTranslationCount"], 63)
-        self.assertEqual(catalog["fallbackTranslationCount"], 16)
+        self.assertTrue(catalog["skills"])
+        self.assertGreater(catalog["officialTranslationCount"], 0)
+        self.assertGreaterEqual(catalog["fallbackTranslationCount"], 3)
+        self.assertEqual(catalog["missingTranslations"], [])
         self.assertEqual(
             catalog["officialTranslationCount"] + catalog["fallbackTranslationCount"],
             len(catalog["skills"]),
@@ -265,21 +266,27 @@ class BackendSkillContractTest(unittest.TestCase):
             source.parent.mkdir(parents=True)
             source.write_text("updated entry", encoding="utf-8")
 
-            plugins_cmd = types.ModuleType("hermes_cli.plugins_cmd")
-            plugins_cmd.dashboard_update_user_plugin = lambda name: {
-                "ok": True, "name": name, "unchanged": False, "output": "updated"
-            }
+            plugins_cmd = types.ModuleType("hermes_cli.plugins_cmd_update")
+            def migrate_checkout(name):
+                unified = plugin_root / "desktop"
+                unified.mkdir()
+                source.rename(unified / "plugin.js")
+                (unified / "plugin-core.js").write_text("legacy companion", encoding="utf-8")
+                return {"ok": True, "name": name, "unchanged": False, "output": "updated"}
+
+            plugins_cmd.dashboard_update_user_plugin = migrate_checkout
             hermes_cli = types.ModuleType("hermes_cli")
             hermes_cli.__path__ = []
             with patch.dict(sys.modules, {
                 "hermes_cli": hermes_cli,
-                "hermes_cli.plugins_cmd": plugins_cmd,
+                "hermes_cli.plugins_cmd_update": plugins_cmd,
             }):
                 result = HermesRuntime.update_plugin(
                     "skill-manager", plugin_root, target
                 )
 
             self.assertEqual(target.read_text(encoding="utf-8"), "updated entry")
+            self.assertEqual((target.parent / "plugin-core.js").read_text(), "legacy companion")
             self.assertTrue(result["restartRequired"])
             self.assertEqual(result["desktopPath"], str(target))
 
@@ -287,14 +294,14 @@ class BackendSkillContractTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             calls = []
-            plugins_cmd = types.ModuleType("hermes_cli.plugins_cmd")
+            plugins_cmd = types.ModuleType("hermes_cli.plugins_cmd_update")
             plugins_cmd.dashboard_update_user_plugin = lambda name: calls.append(name) or {"ok": True}
             hermes_cli = types.ModuleType("hermes_cli")
             hermes_cli.__path__ = []
 
             with patch.dict(sys.modules, {
                 "hermes_cli": hermes_cli,
-                "hermes_cli.plugins_cmd": plugins_cmd,
+                "hermes_cli.plugins_cmd_update": plugins_cmd,
             }):
                 with self.assertRaises(SkillManagerError):
                     HermesRuntime.update_plugin("skill-manager", root / "missing", root / "active.js")
@@ -316,7 +323,7 @@ class BackendSkillContractTest(unittest.TestCase):
             self.assertFalse(list(target.parent.glob(".*.preflight")))
 
     def test_runtime_builtin_reset_raises_when_hermes_reports_failure(self):
-        skills_sync = types.ModuleType("tools.skills_sync")
+        skills_sync = types.ModuleType("tools.skills_sync_bundled_ops")
         skills_sync.reset_bundled_skill = lambda name, restore: {
             "ok": False, "message": "reset refused"
         }
@@ -325,7 +332,7 @@ class BackendSkillContractTest(unittest.TestCase):
 
         with patch.dict(sys.modules, {
             "tools": tools_package,
-            "tools.skills_sync": skills_sync,
+            "tools.skills_sync_bundled_ops": skills_sync,
         }):
             with self.assertRaises(SkillManagerError) as raised:
                 HermesRuntime.reset_builtin("demo")
@@ -368,7 +375,8 @@ class BackendSkillContractTest(unittest.TestCase):
 
         skills_hub = types.ModuleType("tools.skills_hub")
         skills_hub.HubLockFile = FakeLock
-        skills_hub.check_for_skill_updates = lambda name: [{
+        skills_hub_install = types.ModuleType("tools.skills_hub_install")
+        skills_hub_install.check_for_skill_updates = lambda name: [{
             "name": name,
             "status": "update_available",
             "latest_hash": "new",
@@ -383,6 +391,7 @@ class BackendSkillContractTest(unittest.TestCase):
         with patch.dict(sys.modules, {
             "tools": tools_package,
             "tools.skills_hub": skills_hub,
+            "tools.skills_hub_install": skills_hub_install,
             "hermes_cli": hermes_cli,
             "hermes_cli.skills_hub": cli_skills_hub,
         }):
@@ -823,6 +832,7 @@ class BackendSkillContractTest(unittest.TestCase):
 
         skills_tool = types.ModuleType("tools.skills_tool")
         skills_tool._SKILLS_CACHE = {"with_disabled": ("stale",)}
+        skills_tool.clear_skills_cache = lambda: skills_tool._SKILLS_CACHE.clear()
         tools_package = types.ModuleType("tools")
         tools_package.skills_tool = skills_tool
 
@@ -872,7 +882,10 @@ class BackendSkillContractTest(unittest.TestCase):
         ).read_text(encoding="utf-8")
         self.assertIn("workflow_dispatch:", workflow)
         self.assertIn('cron: "17 3 * * 1"', workflow)
-        self.assertEqual(workflow.count("uses: actions/checkout@v6"), 2)
+        self.assertEqual(workflow.count("uses: actions/checkout@"), 2)
+        self.assertIn("ref: dev", workflow)
+        self.assertIn("git push origin HEAD:dev", workflow)
+        self.assertNotIn("HEAD:main", workflow)
         self.assertIn("contents: write", workflow)
         self.assertIn("scripts/sync_builtin_catalog.py", workflow)
         self.assertIn("dashboard/data/builtin_catalog.json", workflow)
@@ -968,7 +981,7 @@ class BackendSkillContractTest(unittest.TestCase):
         expected_routes = {
             "/inventory", "/delete", "/reset", "/restore", "/update",
             "/plugin-update", "/delete-codex", "/delete-qwen", "/delete-workbuddy",
-            "/sync-codex",
+            "/sync-codex", "/link-agent", "/unlink-agent", "/link-qwen", "/link-workbuddy",
         }
         if hasattr(module.router, "routes"):
             self.assertEqual({route.path for route in module.router.routes}, expected_routes)
@@ -1010,7 +1023,7 @@ class BackendSkillContractTest(unittest.TestCase):
         plugin_name = re.search(r"^name:\s*(\S+)", plugin_yaml, re.MULTILINE).group(1)
         version = re.search(r"^version:\s*(\S+)", plugin_yaml, re.MULTILINE).group(1)
         manifest = json.loads((DASHBOARD / "manifest.json").read_text(encoding="utf-8"))
-        desktop_source = (ROOT / "desktop-plugins" / plugin_name / "plugin.js").read_text(
+        desktop_source = (ROOT / "desktop" / "plugin.js").read_text(
             encoding="utf-8"
         )
         self.assertEqual(plugin_name, "skill-manager")

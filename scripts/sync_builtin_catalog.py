@@ -28,6 +28,9 @@ MARKDOWN_ROW_RE = re.compile(
     re.MULTILINE,
 )
 LOCAL_FALLBACKS = {
+    "blocked-page-recovery": "当网页被付费墙、机器人检测、登录或 JavaScript 限制阻挡时，按顺序尝试缓存、镜像、存档和浏览器读取，验证内容并标明来源。",
+    "box": "通过 Box CLI 管理云端文件、文件夹、共享、搜索和元数据，并使用 Box AI 分析内容。",
+    "github": "通过 gh CLI 管理 GitHub 身份验证、仓库、Issue、Pull Request 和代码审查。",
     "competitor-news-monitor": "监控竞争对手新闻与公告，汇总重要动态并生成可追踪的更新报告。",
     "computer-use": "在后台操作用户桌面，包括点击、输入、滚动和拖拽，不抢占光标、键盘焦点或切换虚拟桌面。支持 macOS、Windows 和 Linux。",
     "docx": "创建、读取和编辑 Word .docx 文档及模板。",
@@ -85,7 +88,7 @@ def load_existing_catalog(catalog_path: Path) -> dict[str, dict[str, str]]:
     return skills if isinstance(skills, dict) else {}
 
 
-def build_catalog(hermes_root: Path, catalog_path: Path) -> dict[str, object]:
+def build_catalog(hermes_root: Path, catalog_path: Path, *, strict: bool = False) -> dict[str, object]:
     docs = (
         hermes_root
         / "website"
@@ -107,7 +110,7 @@ def build_catalog(hermes_root: Path, catalog_path: Path) -> dict[str, object]:
     for name, install_path in discover_bundled_skills(hermes_root):
         translated = official.get(install_path, {})
         description = str(translated.get("descriptionZh", ""))
-        if description:
+        if description and CHINESE_RE.search(description):
             official_count += 1
         else:
             description = LOCAL_FALLBACKS.get(name, "")
@@ -126,7 +129,7 @@ def build_catalog(hermes_root: Path, catalog_path: Path) -> dict[str, object]:
             "path": install_path,
         }
 
-    if missing:
+    if missing and strict:
         joined = "\n".join(f"- {item}" for item in missing)
         raise ValueError(
             "以下新内建技能既没有官方中文译文，也没有本地中文回退：\n"
@@ -138,12 +141,13 @@ def build_catalog(hermes_root: Path, catalog_path: Path) -> dict[str, object]:
         "source": OFFICIAL_CATALOG_URL,
         "officialTranslationCount": official_count,
         "fallbackTranslationCount": len(skills) - official_count,
+        "missingTranslations": missing,
         "skills": dict(sorted(skills.items())),
     }
 
 
-def sync_catalog(hermes_root: Path, catalog_path: Path = DEFAULT_CATALOG) -> bool:
-    document = build_catalog(hermes_root, catalog_path)
+def sync_catalog(hermes_root: Path, catalog_path: Path = DEFAULT_CATALOG, *, strict: bool = False) -> bool:
+    document = build_catalog(hermes_root, catalog_path, strict=strict)
     rendered = json.dumps(document, ensure_ascii=False, indent=2) + "\n"
     previous = catalog_path.read_text(encoding="utf-8") if catalog_path.is_file() else ""
     if rendered == previous:
@@ -166,12 +170,15 @@ def main() -> None:
         type=Path,
         help="parse a downloaded rendered docs page",
     )
+    parser.add_argument("--strict", action="store_true", help="fail without writing if any bundled skill lacks Chinese text")
     parser.add_argument("--catalog", type=Path, default=DEFAULT_CATALOG)
     args = parser.parse_args()
 
     if args.hermes_root:
-        changed = sync_catalog(args.hermes_root.resolve(), args.catalog.resolve())
+        changed = sync_catalog(args.hermes_root.resolve(), args.catalog.resolve(), strict=args.strict)
         document = json.loads(args.catalog.read_text(encoding="utf-8"))
+        for missing in document["missingTranslations"]:
+            print(f"::warning::待补中文译文：{missing}；运行时保留技能原文简介。", file=sys.stderr)
         print(
             f"内建中文目录：{len(document['skills'])} 项，"
             f"官方 {document['officialTranslationCount']} 项，"
