@@ -1,2 +1,0 @@
-# Exercise the real FastAPI adapter instead of its source-only fallback.
-fastapi==0.143.0

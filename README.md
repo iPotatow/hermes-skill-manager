@@ -10,7 +10,7 @@
 
 Hermes Skill Manager 是独立的 Hermes Desktop 原生插件，用于查看和维护 Hermes、skills.sh、QwenWork、WorkBuddy 与 Codex 技能。`1.11.0` 起新增 **Agent 链接**：技能文件始终保留在原始目录，其他 Agent 只创建目录软链接，不再通过复制产生多份 Skill。
 
-当前版本：`1.12.0`
+当前版本：`1.11.0`
 
 ## 核心原则
 
@@ -77,9 +77,17 @@ hermes plugins install iPotatow/hermes-skill-manager
 hermes plugins enable skill-manager
 ```
 
-`1.12.0` 使用官方统一包结构 `desktop/plugin.js`。新版 Hermes Desktop 会自动复制 Desktop 部分，无需手动复制文件。在 **Capabilities → Plugins** 中启用 Desktop 部分；Python 后端与 Desktop 开关各自独立。重启 gateway 后，按 **Rescan** 或运行 **Reload desktop plugins** 刷新。
+再安装 Desktop 文件。`1.11.0` 起 Desktop 入口拆成 `plugin.js` 与 `plugin-core.js` 两个未编译 ESM 文件，因此两者都需要复制：
 
-旧版本若已手动安装 `desktop-plugins/skill-manager`，该目录可能不会被自动覆盖。升级时可用仓库中的 单文件 `desktop/plugin.js` 替换入口文件，或先移除旧的手动安装再 Rescan。远程 gateway 的安装不会自动出现在本机 Desktop；请通过 **Install from Git** 同时安装本机 Desktop 部分。
+```bash
+HERMES_DIR="${HERMES_HOME:-$HOME/.hermes}"
+mkdir -p "$HERMES_DIR/desktop-plugins/skill-manager"
+cp desktop-plugins/skill-manager/plugin.js \
+   desktop-plugins/skill-manager/plugin-core.js \
+   "$HERMES_DIR/desktop-plugins/skill-manager/"
+```
+
+完成后重启 Hermes gateway。若侧边栏没有出现页面，按 `⌘K` 运行 **Reload desktop plugins**。
 
 插件 ID：`skill-manager`  
 原管理页：`/skill-manager`  
@@ -119,15 +127,15 @@ Agent 链接页：`/skill-manager/links`
 
 ## 插件更新
 
-页面顶部仍可点击“更新插件”。更新器先更新 Git checkout，再原子替换生成好的单文件 Desktop 入口，同时兼容旧目录向统一包结构的升级。
+页面顶部仍可点击“更新插件”。更新器会先更新 Git checkout，再原子同步 Desktop 文件；如果存在 `plugin-core.js`，会先复制 companion 文件，最后替换 `plugin.js`，避免热加载时出现缺失 import。
 
 Python 后端发生变化后仍需重启 Hermes gateway。
 
 ## 架构
 
 ```text
-desktop/plugin.js          # Agent Links 扩展入口
-src/plugin-core.js         # 原 Skill Manager Desktop UI 源码
+desktop-plugins/skill-manager/plugin.js          # Agent Links 扩展入口
+desktop-plugins/skill-manager/plugin-core.js     # 原 Skill Manager Desktop UI
 dashboard/manifest.json                         # 后端挂载声明
 dashboard/plugin_api.py                         # FastAPI 请求适配
 dashboard/skill_manager/filesystem.py           # 安全路径、原子文件操作、软链接原语
@@ -140,19 +148,8 @@ tests/                                          # Desktop 与后端测试
 ## 验证
 
 ```bash
-python3 -m pip install -r requirements-test.txt
-node --check desktop/plugin.js
-python3 scripts/build_desktop.py --check
-node --test tests/*.test.js
+node --check desktop-plugins/skill-manager/plugin.js
+node --check desktop-plugins/skill-manager/plugin-core.js
+node --test tests/desktop_plugin_smoke.test.js
 python3 -m unittest discover -s tests -v
 ```
-
-## 官方规范与兼容性
-
-已按 [官方插件规范](https://hermes-agent.nousresearch.com/docs/developer-guide/plugins) 与 [Desktop SDK](https://hermes-agent.nousresearch.com/docs/developer-guide/desktop-plugin-sdk) 核对，基准为 Hermes 上游提交 `09e2ffcab79322cdd9037660fe87004bbd8fd18f`（2026-10-13）。使用宿主的 React、`@hermes/plugin-sdk` 与 scoped REST；后端保持 `dashboard/manifest.json` 挂载。
-
-后端技能重置、卸载、更新及插件更新已改用 9 月模块拆分后的定义路径；发现、Hub lock 与 bundled manifest 仍依赖 Hermes 内部接口，这些接口不享有原生 `PluginContext` 的稳定性保证。升级后应验证这些操作。
-
-中文同步按官方译文、本地审阅译文、已有快照的顺序选择。遇到未来未译技能会发出 Actions warning 并记入 `missingTranslations`，其简介由运行时原文回退；`--strict` 可阻止有缺译项的快照写入。每周同步只向 `dev` 提交，发布到 `main` 需另行压缩合并。
-
-维护源码时运行 `python3 scripts/build_desktop.py` 生成单文件入口；CI 会检查生成文件与 `src/` 一致。用户安装时不需要构建。

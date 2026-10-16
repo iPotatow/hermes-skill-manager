@@ -3,9 +3,9 @@ const fs = require('node:fs')
 const path = require('node:path')
 const test = require('node:test')
 
-const pluginPath = path.join(__dirname, '..', 'src', 'plugin-core.js')
+const pluginPath = path.join(__dirname, '..', 'desktop-plugins', 'skill-manager', 'plugin-core.js')
 const source = fs.readFileSync(pluginPath, 'utf8')
-const entryPath = path.join(__dirname, '..', 'src', 'plugin.js')
+const entryPath = path.join(__dirname, '..', 'desktop-plugins', 'skill-manager', 'plugin.js')
 const entrySource = fs.readFileSync(entryPath, 'utf8')
 
 test('desktop plugin stays within the uncompiled runtime contract', () => {
