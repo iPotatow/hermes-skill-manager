@@ -1,0 +1,201 @@
+"""Safe filesystem primitives for Hermes and agent skill trees."""
+
+from __future__ import annotations
+
+import os
+import shutil
+import uuid
+from pathlib import Path
+
+from .errors import SkillManagerError
+
+
+def copy_file_atomic(source: Path, target: Path) -> None:
+    """Replace one regular file without exposing a partially copied target."""
+
+    source = Path(source)
+    target = Path(target)
+    if source.is_symlink() or not source.is_file():
+        raise SkillManagerError(500, "更新包缺少有效的 Desktop 插件入口")
+    if target.exists() and target.is_dir():
+        raise SkillManagerError(500, "Desktop 插件入口被目录占用")
+
+    target.parent.mkdir(parents=True, exist_ok=True)
+    temporary = target.parent / f".{target.name}.{uuid.uuid4().hex}.tmp"
+    try:
+        shutil.copy2(source, temporary)
+        os.replace(temporary, target)
+    finally:
+        try:
+            temporary.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+
+def preflight_copy_file(source: Path, target: Path) -> None:
+    """Validate that a later atomic copy can read source and stage beside target."""
+
+    source = Path(source)
+    target = Path(target)
+    if source.is_symlink() or not source.is_file():
+        raise SkillManagerError(500, "更新前找不到有效的 Desktop 插件入口")
+    if target.exists() and target.is_dir():
+        raise SkillManagerError(500, "Desktop 插件入口被目录占用")
+
+    target.parent.mkdir(parents=True, exist_ok=True)
+    temporary = target.parent / f".{target.name}.{uuid.uuid4().hex}.preflight"
+    try:
+        shutil.copy2(source, temporary)
+    finally:
+        try:
+            temporary.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+
+def safe_descendant(root: Path, relative_path: str, detail: str) -> Path:
+    """Return a non-symlink descendant of root or reject the path."""
+
+    relative = Path(relative_path)
+    if not relative_path or relative.is_absolute() or any(part in {".", ".."} for part in relative.parts):
+        raise SkillManagerError(400, detail)
+
+    resolved_root = Path(root).expanduser().resolve()
+    target = resolved_root.joinpath(relative)
+    resolved_target = target.resolve(strict=False)
+    if resolved_target == resolved_root or not resolved_target.is_relative_to(resolved_root):
+        raise SkillManagerError(400, detail)
+
+    cursor = resolved_root
+    for part in relative.parts:
+        cursor = cursor / part
+        if cursor.is_symlink():
+            raise SkillManagerError(400, detail)
+    return target
+
+
+def safe_named_descendant(root: Path, name: str, detail: str, create_root: bool = False) -> Path:
+    """Resolve one direct child while rejecting separators and symlinks."""
+
+    if not name or name in {".", ".."} or Path(name).name != name or "/" in name or "\\" in name:
+        raise SkillManagerError(400, detail)
+    expanded_root = Path(root).expanduser()
+    if create_root:
+        expanded_root.mkdir(parents=True, exist_ok=True)
+    return safe_descendant(expanded_root, name, detail)
+
+
+def safe_link_target(root: Path, name: str, detail: str, create_root: bool = False) -> Path:
+    """Return a direct child that may itself be a symlink.
+
+    ``safe_descendant`` intentionally rejects symlinks, which is correct for
+    destructive file operations but prevents us from inspecting or replacing a
+    managed agent binding. This helper validates the root and child name while
+    deliberately leaving the final path unresolved.
+    """
+
+    if not name or name in {".", ".."} or Path(name).name != name or "/" in name or "\\" in name:
+        raise SkillManagerError(400, detail)
+
+    expanded_root = Path(root).expanduser()
+    if create_root:
+        expanded_root.mkdir(parents=True, exist_ok=True)
+    if expanded_root.exists() and not expanded_root.is_dir():
+        raise SkillManagerError(400, detail)
+
+    resolved_root = expanded_root.resolve()
+    return resolved_root / name
+
+
+def validate_sync_source(source: Path) -> None:
+    if source.is_symlink() or not source.is_dir() or not (source / "SKILL.md").is_file():
+        raise SkillManagerError(400, "Hermes 技能缺少 SKILL.md，无法同步到 Codex")
+    for item in source.rglob("*"):
+        if item.is_symlink():
+            raise SkillManagerError(400, f"技能包含符号链接，无法安全同步：{item.name}")
+        if not item.is_dir() and not item.is_file():
+            raise SkillManagerError(400, f"技能包含不支持的特殊文件：{item.name}")
+
+
+def validate_link_source(source: Path) -> Path:
+    """Validate and canonicalize a skill directory used as a symlink source."""
+
+    candidate = Path(source).expanduser()
+    try:
+        resolved = candidate.resolve(strict=True)
+    except (OSError, RuntimeError) as exc:
+        raise SkillManagerError(400, "技能源目录不存在，无法创建软链接") from exc
+
+    skill_md = resolved / "SKILL.md"
+    if not resolved.is_dir() or skill_md.is_symlink() or not skill_md.is_file():
+        raise SkillManagerError(400, "技能源目录缺少有效的 SKILL.md，无法创建软链接")
+    return resolved
+
+
+def link_skill(source: Path, target: Path, force: bool = False) -> bool:
+    """Bind an agent skill directory to the original skill using a symlink.
+
+    The source is never moved or copied. Existing real files/directories are
+    never replaced, even with ``force``; force only permits replacing an
+    existing symlink that points somewhere else.
+
+    Returns ``True`` when a new link is created and ``False`` when the target
+    already points at the requested source.
+    """
+
+    source = validate_link_source(source)
+    target = Path(target)
+    target.parent.mkdir(parents=True, exist_ok=True)
+
+    if target.is_symlink():
+        existing = target.resolve(strict=False)
+        if existing == source:
+            return False
+        if not force:
+            raise SkillManagerError(409, "目标 Agent 已存在同名软链接；确认覆盖后才能重新绑定")
+        target.unlink()
+    elif target.exists():
+        raise SkillManagerError(
+            409,
+            "目标 Agent 已存在同名真实文件或目录；为避免破坏原有技能，不会自动覆盖",
+        )
+
+    try:
+        os.symlink(source, target, target_is_directory=True)
+    except OSError as exc:
+        raise SkillManagerError(500, f"创建技能软链接失败：{exc}") from exc
+    return True
+
+
+def copy_skill(source: Path, target: Path, force: bool = False) -> None:
+    """Atomically install a complete Hermes skill into Codex.
+
+    Kept for backwards compatibility and tests. Agent sharing now uses
+    :func:`link_skill` instead so the original skill remains the source of truth.
+    """
+
+    validate_sync_source(source)
+    if target.is_symlink():
+        raise SkillManagerError(400, "Codex 技能目标不能是符号链接")
+    if target.exists() and not target.is_dir():
+        raise SkillManagerError(409, "Codex 目标已存在且不是技能目录")
+    if target.exists() and not force:
+        raise SkillManagerError(409, "Codex 中已存在同名技能；确认覆盖后才能重新同步")
+
+    temporary = target.parent / f".{target.name}.{uuid.uuid4().hex}.tmp"
+    backup = target.parent / f".{target.name}.{uuid.uuid4().hex}.bak"
+    replaced = False
+    try:
+        shutil.copytree(source, temporary)
+        if target.exists():
+            os.replace(target, backup)
+            replaced = True
+        os.replace(temporary, target)
+        if backup.exists():
+            shutil.rmtree(backup, ignore_errors=True)
+    except Exception:
+        if temporary.exists():
+            shutil.rmtree(temporary, ignore_errors=True)
+        if replaced and backup.exists() and not target.exists():
+            os.replace(backup, target)
+        raise

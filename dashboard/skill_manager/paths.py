@@ -1,0 +1,189 @@
+"""Profile-aware filesystem locations used by the skill manager."""
+
+from __future__ import annotations
+
+import os
+from dataclasses import dataclass
+from pathlib import Path
+
+from .constants import PLUGIN_ID
+
+
+def resolve_hermes_home() -> Path:
+    try:
+        from hermes_constants import get_hermes_home
+
+        return Path(get_hermes_home())
+    except Exception:
+        return Path.home() / ".hermes"
+
+
+def resolve_hermes_skills_dir() -> Path:
+    try:
+        from tools.skills_tool import _skills_dir
+
+        return Path(_skills_dir())
+    except Exception:
+        return resolve_hermes_home() / "skills"
+
+
+def resolve_codex_home() -> Path:
+    configured = os.environ.get("CODEX_HOME", "").strip()
+    return Path(configured).expanduser() if configured else Path.home() / ".codex"
+
+
+def resolve_qwenwork_home() -> Path:
+    """Resolve the active QwenWork user-data root."""
+
+    configured = os.environ.get("QWENWORK_HOME", "").strip()
+    return Path(configured).expanduser() if configured else Path.home() / ".qwenworkcn"
+
+
+def resolve_qwenwork_builtin_skills() -> Path:
+    """Resolve QwenWork's bundled skills directory when it is discoverable."""
+
+    configured = os.environ.get("QWENWORK_RESOURCES", "").strip()
+    if configured:
+        return Path(configured).expanduser() / "skills"
+
+    candidates = (
+        Path("/Applications/QwenWorkCN.app/Contents/Resources/skills"),
+        Path.home() / "Applications/QwenWorkCN.app/Contents/Resources/skills",
+    )
+    for candidate in candidates:
+        if candidate.is_dir():
+            return candidate
+    return candidates[0]
+
+
+def resolve_workbuddy_home() -> Path:
+    """Resolve the active WorkBuddy user-data root."""
+
+    configured = os.environ.get("WORKBUDDY_HOME", "").strip()
+    return Path(configured).expanduser() if configured else Path.home() / ".workbuddy"
+
+
+def resolve_workbuddy_builtin_skills() -> Path:
+    """Resolve WorkBuddy's bundled skills directory when it is discoverable."""
+
+    configured = os.environ.get("WORKBUDDY_BUILTIN_SKILLS", "").strip()
+    if configured:
+        return Path(configured).expanduser()
+
+    resources = os.environ.get("WORKBUDDY_RESOURCES", "").strip()
+    if resources:
+        return Path(resources).expanduser() / "builtin-skills"
+
+    candidates = (
+        Path(
+            "/Applications/WorkBuddy.app/Contents/Resources/"
+            "app.asar.unpacked/resources/builtin-skills"
+        ),
+        Path.home()
+        / "Applications/WorkBuddy.app/Contents/Resources/"
+        / "app.asar.unpacked/resources/builtin-skills",
+        Path(
+            "/Applications/CodeBuddy.app/Contents/Resources/"
+            "app.asar.unpacked/resources/builtin-skills"
+        ),
+        Path.home()
+        / "Applications/CodeBuddy.app/Contents/Resources/"
+        / "app.asar.unpacked/resources/builtin-skills",
+    )
+    for candidate in candidates:
+        if candidate.is_dir():
+            return candidate
+    return candidates[0]
+
+
+@dataclass(frozen=True)
+class SkillPaths:
+    """Resolve active-profile paths lazily; overrides keep tests hermetic."""
+
+    home_override: Path | None = None
+    skills_override: Path | None = None
+    codex_home_override: Path | None = None
+    qwenwork_home_override: Path | None = None
+    qwenwork_builtin_skills_override: Path | None = None
+    workbuddy_home_override: Path | None = None
+    workbuddy_builtin_skills_override: Path | None = None
+
+    @property
+    def home(self) -> Path:
+        return Path(self.home_override) if self.home_override is not None else resolve_hermes_home()
+
+    @property
+    def skills(self) -> Path:
+        return Path(self.skills_override) if self.skills_override is not None else resolve_hermes_skills_dir()
+
+    @property
+    def codex_home(self) -> Path:
+        return Path(self.codex_home_override) if self.codex_home_override is not None else resolve_codex_home()
+
+    @property
+    def codex_skills(self) -> Path:
+        return self.codex_home / "skills"
+
+    @property
+    def qwenwork_home(self) -> Path:
+        return (
+            Path(self.qwenwork_home_override)
+            if self.qwenwork_home_override is not None
+            else resolve_qwenwork_home()
+        )
+
+    @property
+    def qwenwork_skills(self) -> Path:
+        return self.qwenwork_home / "skills"
+
+    @property
+    def qwenwork_builtin_skills(self) -> Path:
+        return (
+            Path(self.qwenwork_builtin_skills_override)
+            if self.qwenwork_builtin_skills_override is not None
+            else resolve_qwenwork_builtin_skills()
+        )
+
+    @property
+    def workbuddy_home(self) -> Path:
+        return (
+            Path(self.workbuddy_home_override)
+            if self.workbuddy_home_override is not None
+            else resolve_workbuddy_home()
+        )
+
+    @property
+    def workbuddy_skills(self) -> Path:
+        return self.workbuddy_home / "skills"
+
+    @property
+    def workbuddy_builtin_skills(self) -> Path:
+        return (
+            Path(self.workbuddy_builtin_skills_override)
+            if self.workbuddy_builtin_skills_override is not None
+            else resolve_workbuddy_builtin_skills()
+        )
+
+    @property
+    def plugin_root(self) -> Path:
+        """Root of the installed git checkout Hermes can update."""
+
+        return Path(__file__).resolve().parents[2]
+
+    @property
+    def desktop_plugin_entry(self) -> Path:
+        """Active Desktop entry copied from the installed plugin checkout."""
+
+        return self.home / "desktop-plugins" / PLUGIN_ID / "plugin.js"
+
+    @property
+    def state(self) -> Path:
+        return self.home / "state" / "plugins" / f"{PLUGIN_ID}.json"
+
+    @property
+    def legacy_state(self) -> Path:
+        return self.home / "state" / "plugins" / "desktop-skill-manager.json"
+
+    @property
+    def builtin_catalog(self) -> Path:
+        return Path(__file__).resolve().parents[1] / "data" / "builtin_catalog.json"

@@ -1,0 +1,1050 @@
+import asyncio
+import importlib.util
+import inspect
+import json
+import re
+import sys
+import tempfile
+import threading
+import types
+import unittest
+from pathlib import Path
+from unittest.mock import patch
+
+
+ROOT = Path(__file__).resolve().parents[1]
+DASHBOARD = ROOT / "dashboard"
+BACKEND = DASHBOARD / "plugin_api.py"
+BUILTIN_SYNC = ROOT / "scripts" / "sync_builtin_catalog.py"
+if str(DASHBOARD) not in sys.path:
+    sys.path.insert(0, str(DASHBOARD))
+
+from skill_manager.catalog import (
+    OFFICIAL_CATALOG_URL,
+    BuiltinCatalog,
+    parse_official_catalog,
+)
+from skill_manager.errors import SkillManagerError
+from skill_manager.filesystem import (
+    copy_file_atomic,
+    copy_skill,
+    preflight_copy_file,
+    safe_descendant,
+    validate_sync_source,
+)
+from skill_manager.inventory import SkillInventory, capture
+from skill_manager.paths import SkillPaths
+from skill_manager.runtime import HermesRuntime
+from skill_manager.service import SkillManager
+from skill_manager.state import StateStore
+
+
+def load_backend():
+    spec = importlib.util.spec_from_file_location("skill_manager_adapter_test", BACKEND)
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(module)
+    return module
+
+
+def load_builtin_sync():
+    spec = importlib.util.spec_from_file_location("builtin_catalog_sync_test", BUILTIN_SYNC)
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(module)
+    return module
+
+
+class StateStub:
+    def __init__(self):
+        self.events = []
+
+    def load(self):
+        return {"version": 1, "history": []}
+
+    @staticmethod
+    def now():
+        return "2026-07-21T00:00:00+00:00"
+
+    def record_best_effort(self, event):
+        self.events.append(dict(event))
+
+
+class RuntimeStub:
+    def __init__(self):
+        self.calls = []
+        self.clear_count = 0
+        self.restore_result = {"ok": True}
+
+    def clear_skill_cache(self):
+        self.clear_count += 1
+
+    def uninstall(self, name):
+        self.calls.append(("uninstall", name))
+
+    def reset_builtin(self, name):
+        self.calls.append(("reset-builtin", name))
+        return {"ok": True}
+
+    def reset_hub(self, name, identifier, category):
+        self.calls.append(("reset-hub", name, identifier, category))
+        return {"ok": True}
+
+    def restore_builtin(self, name):
+        self.calls.append(("restore", name))
+        return self.restore_result
+
+    def update_hub(self, name):
+        self.calls.append(("update", name))
+        return {"ok": True, "status": "updated"}
+
+    def update_plugin(self, name, plugin_root, desktop_entry):
+        self.calls.append(("plugin-update", name, plugin_root, desktop_entry))
+        return {"ok": True, "unchanged": False, "desktopPath": str(desktop_entry)}
+
+
+class InventoryStub:
+    def __init__(self, rows, source_path=None, target_path=None):
+        self.rows_by_key = {
+            (row.get("kind") or row.get("source"), row["name"]): row
+            for row in rows
+        }
+        self.source_path = source_path
+        self.target_path = target_path
+        self.missing = {}
+
+    def find(self, source, name):
+        try:
+            return self.rows_by_key[(source, name)]
+        except KeyError as exc:
+            raise SkillManagerError(404, f"missing {source}:{name}") from exc
+
+    def find_missing_builtin(self, name):
+        try:
+            return self.missing[name]
+        except KeyError as exc:
+            raise SkillManagerError(404, f"missing builtin:{name}") from exc
+
+    def safe_target(self, _relative_path):
+        return self.source_path
+
+    def safe_codex_target(self, _name, create_root=False):
+        if create_root:
+            self.target_path.parent.mkdir(parents=True, exist_ok=True)
+        return self.target_path
+
+
+class BackendSkillContractTest(unittest.TestCase):
+    def test_official_chinese_catalog_parser_reads_rendered_skill_tables(self):
+        content = """
+        <table><thead><tr><th>技能</th><th>描述</th><th>路径</th></tr></thead>
+        <tbody><tr>
+          <td><a href="/skill"><code>apple-notes</code></a></td>
+          <td>通过 <code>memo</code> CLI 管理 Apple Notes：创建、搜索、编辑。</td>
+          <td><code>apple/apple-notes</code></td>
+        </tr></tbody></table>
+        """
+
+        self.assertEqual(parse_official_catalog(content), {
+            "apple-notes": {
+                "descriptionZh": "通过 memo CLI 管理 Apple Notes：创建、搜索、编辑。",
+                "path": "apple/apple-notes",
+            }
+        })
+
+    def test_official_catalog_refresh_is_authoritative_and_offline_safe(self):
+        with tempfile.TemporaryDirectory() as directory:
+            snapshot = Path(directory) / "catalog.json"
+            snapshot.write_text(json.dumps({
+                "skills": {
+                    "apple-notes": {"descriptionZh": "离线简介", "path": "apple/apple-notes"},
+                    "not-on-official-page": {"descriptionZh": "本地翻译", "path": "other"},
+                }
+            }), encoding="utf-8")
+            remote = {
+                "apple-notes": {"descriptionZh": "官方简介", "path": "apple/apple-notes"},
+            }
+            catalog = BuiltinCatalog(
+                snapshot,
+                fetcher=lambda: remote,
+                background_refresh=False,
+            )
+
+            self.assertEqual(catalog.snapshot()["apple-notes"]["descriptionZh"], "离线简介")
+            self.assertTrue(catalog.refresh_now())
+            self.assertEqual(catalog.snapshot(), remote)
+
+            failing = BuiltinCatalog(
+                snapshot,
+                fetcher=lambda: (_ for _ in ()).throw(OSError("offline")),
+                background_refresh=False,
+            )
+            self.assertFalse(failing.refresh_now())
+            self.assertEqual(failing.snapshot()["apple-notes"]["descriptionZh"], "离线简介")
+
+    def test_bundled_chinese_catalog_is_an_official_page_snapshot(self):
+        catalog = json.loads(
+            (DASHBOARD / "data" / "builtin_catalog.json").read_text(encoding="utf-8")
+        )
+        self.assertEqual(catalog["schemaVersion"], 2)
+        self.assertEqual(catalog["source"], OFFICIAL_CATALOG_URL)
+        self.assertTrue(catalog["skills"])
+        self.assertGreater(catalog["officialTranslationCount"], 0)
+        self.assertGreaterEqual(catalog["fallbackTranslationCount"], 3)
+        self.assertEqual(catalog["missingTranslations"], [])
+        self.assertEqual(
+            catalog["officialTranslationCount"] + catalog["fallbackTranslationCount"],
+            len(catalog["skills"]),
+        )
+        self.assertNotIn("petdex", catalog["skills"])
+        self.assertIn("simplify-code", catalog["skills"])
+        for row in catalog["skills"].values():
+            self.assertEqual(set(row), {"descriptionZh", "path"})
+
+    def test_builtin_translation_sync_prefers_official_and_fills_new_skills(self):
+        sync = load_builtin_sync()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            catalog = root / "builtin_catalog.json"
+            for relative in ("creative/official-demo", "productivity/docx"):
+                skill = root / "skills" / relative
+                skill.mkdir(parents=True)
+                (skill / "SKILL.md").write_text("---\nname: demo\n---\n", encoding="utf-8")
+            docs = (
+                root
+                / "website/i18n/zh-Hans/docusaurus-plugin-content-docs/current"
+                / "reference/skills-catalog.md"
+            )
+            docs.parent.mkdir(parents=True)
+            docs.write_text(
+                "| [`official-demo`](/demo) | 官方内建译文 | `creative/official-demo` |\n",
+                encoding="utf-8",
+            )
+            catalog.write_text(json.dumps({
+                "skills": {
+                    "official-demo": {"descriptionZh": "旧译文", "path": "creative/official-demo"},
+                    "removed": {"descriptionZh": "应被移除", "path": "removed"},
+                }
+            }), encoding="utf-8")
+
+            self.assertTrue(sync.sync_catalog(root, catalog))
+            result = json.loads(catalog.read_text(encoding="utf-8"))
+
+        self.assertEqual(
+            result["skills"]["official-demo"]["descriptionZh"],
+            "官方内建译文",
+        )
+        self.assertEqual(
+            result["skills"]["docx"]["descriptionZh"],
+            sync.LOCAL_FALLBACKS["docx"],
+        )
+        self.assertNotIn("removed", result["skills"])
+        self.assertEqual(result["officialTranslationCount"], 1)
+        self.assertEqual(result["fallbackTranslationCount"], 1)
+
+    def test_copy_file_atomic_replaces_desktop_entry_without_temporary_files(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "checkout" / "plugin.js"
+            target = root / "active" / "plugin.js"
+            source.parent.mkdir()
+            target.parent.mkdir()
+            source.write_text("new entry", encoding="utf-8")
+            target.write_text("old entry", encoding="utf-8")
+
+            copy_file_atomic(source, target)
+
+            self.assertEqual(target.read_text(encoding="utf-8"), "new entry")
+            self.assertFalse(list(target.parent.glob(".*.tmp")))
+
+    def test_runtime_uses_hermes_plugin_updater_then_syncs_desktop_entry(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            plugin_root = root / "checkout"
+            source = plugin_root / "desktop-plugins" / "skill-manager" / "plugin.js"
+            target = root / "active" / "plugin.js"
+            source.parent.mkdir(parents=True)
+            source.write_text("updated entry", encoding="utf-8")
+
+            plugins_cmd = types.ModuleType("hermes_cli.plugins_cmd_update")
+            def migrate_checkout(name):
+                unified = plugin_root / "desktop"
+                unified.mkdir()
+                source.rename(unified / "plugin.js")
+                (unified / "plugin-core.js").write_text("legacy companion", encoding="utf-8")
+                return {"ok": True, "name": name, "unchanged": False, "output": "updated"}
+
+            plugins_cmd.dashboard_update_user_plugin = migrate_checkout
+            hermes_cli = types.ModuleType("hermes_cli")
+            hermes_cli.__path__ = []
+            with patch.dict(sys.modules, {
+                "hermes_cli": hermes_cli,
+                "hermes_cli.plugins_cmd_update": plugins_cmd,
+            }):
+                result = HermesRuntime.update_plugin(
+                    "skill-manager", plugin_root, target
+                )
+
+            self.assertEqual(target.read_text(encoding="utf-8"), "updated entry")
+            self.assertEqual((target.parent / "plugin-core.js").read_text(), "legacy companion")
+            self.assertTrue(result["restartRequired"])
+            self.assertEqual(result["desktopPath"], str(target))
+
+    def test_plugin_update_preflight_runs_before_checkout_mutation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            calls = []
+            plugins_cmd = types.ModuleType("hermes_cli.plugins_cmd_update")
+            plugins_cmd.dashboard_update_user_plugin = lambda name: calls.append(name) or {"ok": True}
+            hermes_cli = types.ModuleType("hermes_cli")
+            hermes_cli.__path__ = []
+
+            with patch.dict(sys.modules, {
+                "hermes_cli": hermes_cli,
+                "hermes_cli.plugins_cmd_update": plugins_cmd,
+            }):
+                with self.assertRaises(SkillManagerError):
+                    HermesRuntime.update_plugin("skill-manager", root / "missing", root / "active.js")
+
+            self.assertEqual(calls, [])
+
+    def test_preflight_copy_file_leaves_target_unchanged(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "source.js"
+            target = root / "active" / "plugin.js"
+            source.write_text("new", encoding="utf-8")
+            target.parent.mkdir()
+            target.write_text("old", encoding="utf-8")
+
+            preflight_copy_file(source, target)
+
+            self.assertEqual(target.read_text(encoding="utf-8"), "old")
+            self.assertFalse(list(target.parent.glob(".*.preflight")))
+
+    def test_runtime_builtin_reset_raises_when_hermes_reports_failure(self):
+        skills_sync = types.ModuleType("tools.skills_sync_bundled_ops")
+        skills_sync.reset_bundled_skill = lambda name, restore: {
+            "ok": False, "message": "reset refused"
+        }
+        tools_package = types.ModuleType("tools")
+        tools_package.__path__ = []
+
+        with patch.dict(sys.modules, {
+            "tools": tools_package,
+            "tools.skills_sync_bundled_ops": skills_sync,
+        }):
+            with self.assertRaises(SkillManagerError) as raised:
+                HermesRuntime.reset_builtin("demo")
+
+        self.assertEqual(raised.exception.detail, "reset refused")
+
+    def test_runtime_hub_reset_requires_lockfile_change(self):
+        entry = {"updated_at": "before", "content_hash": "old"}
+
+        class FakeLock:
+            def get_installed(self, name):
+                return dict(entry)
+
+        skills_hub = types.ModuleType("tools.skills_hub")
+        skills_hub.HubLockFile = FakeLock
+        tools_package = types.ModuleType("tools")
+        tools_package.__path__ = []
+        cli_skills_hub = types.ModuleType("hermes_cli.skills_hub")
+        cli_skills_hub.do_install = lambda *args, **kwargs: None
+        hermes_cli = types.ModuleType("hermes_cli")
+        hermes_cli.__path__ = []
+
+        with patch.dict(sys.modules, {
+            "tools": tools_package,
+            "tools.skills_hub": skills_hub,
+            "hermes_cli": hermes_cli,
+            "hermes_cli.skills_hub": cli_skills_hub,
+        }):
+            with self.assertRaises(SkillManagerError) as raised:
+                HermesRuntime.reset_hub("demo", "owner/repo", "tools")
+
+        self.assertEqual(raised.exception.status_code, 502)
+
+    def test_runtime_hub_update_verifies_installed_hash(self):
+        entry = {"content_hash": "old"}
+
+        class FakeLock:
+            def get_installed(self, name):
+                return dict(entry)
+
+        skills_hub = types.ModuleType("tools.skills_hub")
+        skills_hub.HubLockFile = FakeLock
+        skills_hub_install = types.ModuleType("tools.skills_hub_install")
+        skills_hub_install.check_for_skill_updates = lambda name: [{
+            "name": name,
+            "status": "update_available",
+            "latest_hash": "new",
+        }]
+        tools_package = types.ModuleType("tools")
+        tools_package.__path__ = []
+        cli_skills_hub = types.ModuleType("hermes_cli.skills_hub")
+        cli_skills_hub.do_update = lambda **kwargs: None
+        hermes_cli = types.ModuleType("hermes_cli")
+        hermes_cli.__path__ = []
+
+        with patch.dict(sys.modules, {
+            "tools": tools_package,
+            "tools.skills_hub": skills_hub,
+            "tools.skills_hub_install": skills_hub_install,
+            "hermes_cli": hermes_cli,
+            "hermes_cli.skills_hub": cli_skills_hub,
+        }):
+            with self.assertRaises(SkillManagerError) as raised:
+                HermesRuntime.update_hub("demo")
+
+        self.assertEqual(raised.exception.status_code, 502)
+
+    def test_up_to_date_hub_update_does_not_record_a_mutation(self):
+        row = {
+            "name": "hub",
+            "kind": "hub-installed",
+            "source": "hub-installed",
+            "installPath": "tools/hub",
+        }
+        state = StateStub()
+        runtime = RuntimeStub()
+        runtime.update_hub = lambda name: {"ok": True, "status": "up_to_date"}
+        manager = SkillManager(
+            inventory=InventoryStub([row]),
+            state=state,
+            runtime=runtime,
+        )
+
+        result = manager.update("hub")
+
+        self.assertEqual(result["result"]["status"], "up_to_date")
+        self.assertEqual(runtime.clear_count, 0)
+        self.assertEqual(state.events, [])
+
+    def test_copy_skill_is_complete_atomic_and_requires_force(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "hermes" / "demo-skill"
+            target = root / "codex" / "skills" / "demo-skill"
+            (source / "references").mkdir(parents=True)
+            target.mkdir(parents=True)
+            (source / "SKILL.md").write_text("new", encoding="utf-8")
+            (source / "references" / "guide.md").write_text("guide", encoding="utf-8")
+            (target / "SKILL.md").write_text("old", encoding="utf-8")
+
+            with self.assertRaises(SkillManagerError) as raised:
+                copy_skill(source, target)
+            self.assertEqual(raised.exception.status_code, 409)
+            self.assertEqual((target / "SKILL.md").read_text(encoding="utf-8"), "old")
+
+            copy_skill(source, target, force=True)
+            self.assertEqual((target / "SKILL.md").read_text(encoding="utf-8"), "new")
+            self.assertEqual((target / "references" / "guide.md").read_text(encoding="utf-8"), "guide")
+            self.assertFalse(list(target.parent.glob(".*.tmp")))
+            self.assertFalse(list(target.parent.glob(".*.bak")))
+
+    def test_sync_source_rejects_root_and_nested_symlinks(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "source"
+            source.mkdir()
+            (source / "SKILL.md").write_text("demo", encoding="utf-8")
+            (source / "outside-link").symlink_to(root / "outside")
+            with self.assertRaises(SkillManagerError):
+                validate_sync_source(source)
+
+            linked_source = root / "linked-source"
+            real_source = root / "real-source"
+            real_source.mkdir()
+            (real_source / "SKILL.md").write_text("demo", encoding="utf-8")
+            linked_source.symlink_to(real_source, target_is_directory=True)
+            with self.assertRaises(SkillManagerError):
+                validate_sync_source(linked_source)
+
+    def test_safe_descendant_rejects_escape_and_symlink_components(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "skills"
+            outside = Path(directory) / "outside"
+            root.mkdir()
+            outside.mkdir()
+            (root / "linked").symlink_to(outside, target_is_directory=True)
+
+            self.assertEqual(
+                safe_descendant(root, "category/demo", "unsafe"),
+                root.resolve() / "category" / "demo",
+            )
+            for value in ("", "..", "../escape", "/absolute", "linked/demo"):
+                with self.subTest(value=value), self.assertRaises(SkillManagerError):
+                    safe_descendant(root, value, "unsafe")
+
+    def test_codex_inventory_lists_only_user_skills(self):
+        with tempfile.TemporaryDirectory() as directory:
+            paths = SkillPaths(codex_home_override=Path(directory) / "codex")
+            user = paths.codex_skills / "my-skill"
+            system = paths.codex_skills / ".system" / "helper"
+            user.mkdir(parents=True)
+            system.mkdir(parents=True)
+            (user / "SKILL.md").write_text(
+                '---\nname: "My Skill"\ndescription: "A user skill"\n---\n',
+                encoding="utf-8",
+            )
+            (system / "SKILL.md").write_text(
+                "---\nname: helper\ndescription: System helper\n---\n",
+                encoding="utf-8",
+            )
+
+            rows = SkillInventory(paths).codex_inventory([])
+            by_name = {row["name"]: row for row in rows}
+            self.assertEqual(set(by_name), {"My Skill"})
+            self.assertEqual(by_name["My Skill"]["kind"], "user")
+
+    def test_codex_delete_requires_confirmation_and_cannot_reach_system_skills(self):
+        with tempfile.TemporaryDirectory() as directory:
+            paths = SkillPaths(codex_home_override=Path(directory) / "codex")
+            user = paths.codex_skills / "my-skill"
+            system = paths.codex_skills / ".system" / "helper"
+            user.mkdir(parents=True)
+            system.mkdir(parents=True)
+            (user / "SKILL.md").write_text(
+                "---\nname: My Skill\ndescription: User\n---\n",
+                encoding="utf-8",
+            )
+            (system / "SKILL.md").write_text(
+                "---\nname: helper\ndescription: System\n---\n",
+                encoding="utf-8",
+            )
+            state = StateStub()
+            runtime = RuntimeStub()
+            manager = SkillManager(paths=paths, state=state, runtime=runtime)
+
+            with self.assertRaises(SkillManagerError) as raised:
+                manager.delete_codex("My Skill", "my-skill", "wrong")
+            self.assertEqual(raised.exception.status_code, 400)
+            self.assertTrue(user.exists())
+
+            with self.assertRaises(SkillManagerError) as raised:
+                manager.delete_codex("helper", ".system/helper", "helper")
+            self.assertEqual(raised.exception.status_code, 404)
+            self.assertTrue(system.exists())
+
+            result = manager.delete_codex("My Skill", "my-skill", "My Skill")
+            self.assertTrue(result["ok"])
+            self.assertFalse(user.exists())
+            self.assertTrue(system.exists())
+            self.assertEqual(runtime.clear_count, 0)
+            self.assertEqual(state.events[0]["action"], "delete-codex")
+
+    def test_qwenwork_inventory_reads_frontmatter_and_deletes_only_confirmed_skill(self):
+        with tempfile.TemporaryDirectory() as directory:
+            paths = SkillPaths(
+                qwenwork_home_override=Path(directory) / "qwenwork",
+                qwenwork_builtin_skills_override=Path(directory) / "bundled-skills",
+            )
+            skill = paths.qwenwork_skills / "office" / "weekly-report"
+            skill.mkdir(parents=True)
+            (skill / "SKILL.md").write_text(
+                "---\nname: 周报助手\ndescription: 生成周报\ndescription_zh: 生成中文周报\n---\n",
+                encoding="utf-8",
+            )
+            (skill / "reference.md").write_text("template", encoding="utf-8")
+            (paths.qwenwork_skills / "not-a-skill").mkdir(parents=True)
+            (paths.qwenwork_skills / "not-a-skill" / "SKILL.md").write_text(
+                "This file has no QwenWork frontmatter.\n", encoding="utf-8"
+            )
+            builtin = paths.qwenwork_skills / "docx"
+            builtin.mkdir(parents=True)
+            (builtin / "SKILL.md").write_text(
+                "---\nname: docx\ndescription: Built-in\n---\n", encoding="utf-8"
+            )
+            bundled = paths.qwenwork_builtin_skills / "docx"
+            bundled.mkdir(parents=True)
+            (bundled / "SKILL.md").write_text(
+                "---\nname: docx\ndescription: Built-in\n---\n", encoding="utf-8"
+            )
+            rows = SkillInventory(paths).qwenwork_inventory([])
+
+            self.assertEqual(len(rows), 1)
+            self.assertEqual(rows[0]["name"], "周报助手")
+            self.assertEqual(rows[0]["kind"], "qwen")
+            self.assertEqual(rows[0]["source"], "qwenwork")
+            self.assertEqual(rows[0]["category"], "office")
+            self.assertEqual(rows[0]["relativePath"], "office/weekly-report")
+            self.assertEqual(rows[0]["availableActions"], ["delete-qwen"])
+            self.assertNotIn("docx", {row["name"] for row in rows})
+
+            manager = SkillManager(paths=paths, state=StateStub(), runtime=RuntimeStub())
+            with self.assertRaises(SkillManagerError) as raised:
+                manager.delete_qwenwork("周报助手", "office/weekly-report", "wrong")
+            self.assertEqual(raised.exception.status_code, 400)
+            self.assertTrue(skill.exists())
+
+            result = manager.delete_qwenwork(
+                "周报助手", "office/weekly-report", "周报助手"
+            )
+            self.assertTrue(result["ok"])
+            self.assertFalse(skill.exists())
+
+    def test_qwenwork_delete_rejects_symlinked_skill_path(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            paths = SkillPaths(qwenwork_home_override=root / "qwenwork")
+            outside = root / "outside"
+            outside.mkdir()
+            (outside / "SKILL.md").write_text("---\nname: outside\n---\n", encoding="utf-8")
+            paths.qwenwork_skills.mkdir(parents=True)
+            (paths.qwenwork_skills / "linked").symlink_to(outside, target_is_directory=True)
+            rows = SkillInventory(paths).qwenwork_inventory([])
+            self.assertEqual(rows, [])
+            with self.assertRaises(SkillManagerError):
+                SkillInventory(paths).safe_qwenwork_relative_target("linked")
+
+    def test_workbuddy_inventory_reads_frontmatter_and_deletes_only_non_builtin_skill(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            paths = SkillPaths(
+                workbuddy_home_override=root / "workbuddy",
+                workbuddy_builtin_skills_override=root / "bundled-skills",
+            )
+            skill = paths.workbuddy_skills / "office" / "weekly-report"
+            skill.mkdir(parents=True)
+            (skill / "SKILL.md").write_text(
+                "---\nname: WorkBuddy 周报\ndescription: 生成周报\n"
+                "description_zh: 生成中文周报\n---\n",
+                encoding="utf-8",
+            )
+            builtin = paths.workbuddy_skills / "docx"
+            builtin.mkdir(parents=True)
+            (builtin / "SKILL.md").write_text(
+                "---\nname: docx\ndescription: Built-in\n---\n",
+                encoding="utf-8",
+            )
+            bundled = paths.workbuddy_builtin_skills / "docx"
+            bundled.mkdir(parents=True)
+            (bundled / "SKILL.md").write_text(
+                "---\nname: docx\ndescription: Built-in\n---\n",
+                encoding="utf-8",
+            )
+
+            rows = SkillInventory(paths).workbuddy_inventory([])
+
+            self.assertEqual(len(rows), 1)
+            self.assertEqual(rows[0]["name"], "WorkBuddy 周报")
+            self.assertEqual(rows[0]["kind"], "workbuddy")
+            self.assertEqual(rows[0]["source"], "workbuddy")
+            self.assertEqual(rows[0]["category"], "office")
+            self.assertEqual(rows[0]["relativePath"], "office/weekly-report")
+            self.assertEqual(rows[0]["availableActions"], ["delete-workbuddy"])
+            self.assertNotIn("docx", {row["name"] for row in rows})
+
+            manager = SkillManager(paths=paths, state=StateStub(), runtime=RuntimeStub())
+            with self.assertRaises(SkillManagerError) as raised:
+                manager.delete_workbuddy("WorkBuddy 周报", "office/weekly-report", "wrong")
+            self.assertEqual(raised.exception.status_code, 400)
+            self.assertTrue(skill.exists())
+
+            result = manager.delete_workbuddy(
+                "WorkBuddy 周报", "office/weekly-report", "WorkBuddy 周报"
+            )
+            self.assertTrue(result["ok"])
+            self.assertFalse(skill.exists())
+
+    def test_workbuddy_delete_rejects_symlinked_skill_path(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            paths = SkillPaths(workbuddy_home_override=root / "workbuddy")
+            outside = root / "outside"
+            outside.mkdir()
+            (outside / "SKILL.md").write_text(
+                "---\nname: outside\n---\n", encoding="utf-8"
+            )
+            paths.workbuddy_skills.mkdir(parents=True)
+            (paths.workbuddy_skills / "linked").symlink_to(outside, target_is_directory=True)
+            rows = SkillInventory(paths).workbuddy_inventory([])
+            self.assertEqual(rows, [])
+            with self.assertRaises(SkillManagerError):
+                SkillInventory(paths).safe_workbuddy_relative_target("linked")
+
+    def test_available_actions_are_explicit_and_source_accurate(self):
+        actions = SkillInventory.available_actions
+        self.assertEqual(actions({"kind": "builtin", "status": "enabled"}), ["reset", "delete"])
+        self.assertEqual(actions({"kind": "hub-installed", "status": "enabled"}), ["reset", "update", "delete"])
+        self.assertEqual(actions({"kind": "local", "status": "enabled"}), ["delete"])
+        self.assertEqual(actions({"kind": "workbuddy", "status": "enabled"}), ["delete-workbuddy"])
+        self.assertEqual(actions({"kind": "builtin", "status": "deleted"}), ["restore"])
+
+    def test_builtin_rows_report_codex_sync_status(self):
+        with tempfile.TemporaryDirectory() as directory:
+            paths = SkillPaths(codex_home_override=Path(directory) / "codex")
+            target = paths.codex_skills / "demo"
+            target.mkdir(parents=True)
+            inventory = SkillInventory(paths)
+
+            enabled = inventory._codex_fields({
+                "kind": "builtin", "name": "demo", "status": "enabled"
+            })
+            deleted = inventory._codex_fields({
+                "kind": "builtin", "name": "demo", "status": "deleted"
+            })
+
+            self.assertTrue(enabled["codexInstalled"])
+            self.assertEqual(enabled["codexPath"], str(target.resolve()))
+            self.assertEqual(deleted, {"codexInstalled": False, "codexPath": ""})
+
+    def test_capture_returns_fallback_and_records_diagnostic(self):
+        diagnostics = []
+
+        def broken_loader():
+            raise RuntimeError("manifest unavailable")
+
+        result = capture("builtin-manifest", broken_loader, set(), diagnostics)
+        self.assertEqual(result, set())
+        self.assertEqual(diagnostics[0]["component"], "builtin-manifest")
+        self.assertIn("manifest unavailable", diagnostics[0]["message"])
+
+    def test_discovery_failure_is_reported_instead_of_false_404(self):
+        inventory = SkillInventory(SkillPaths())
+        inventory.bundled_skills = lambda diagnostics: diagnostics.append(
+            {"component": "bundled-skills", "message": "API changed"}
+        ) or []
+        inventory.rows = lambda diagnostics, _names=None: []
+
+        with self.assertRaises(SkillManagerError) as raised:
+            inventory.find("builtin", "example")
+        self.assertEqual(raised.exception.status_code, 503)
+
+    def test_state_store_is_atomic_and_shared_across_request_instances(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "state" / "plugins" / "skill-manager.json"
+            stores = [StateStore(path) for _index in range(20)]
+            threads = [
+                threading.Thread(target=store.record, args=({"action": "update", "name": str(index)},))
+                for index, store in enumerate(stores)
+            ]
+            for thread in threads:
+                thread.start()
+            for thread in threads:
+                thread.join()
+
+            state = json.loads(path.read_text(encoding="utf-8"))
+            self.assertEqual(len(state["history"]), 20)
+            self.assertFalse(list(path.parent.glob(".*.tmp")))
+
+    def test_renamed_state_store_reads_legacy_plugin_history(self):
+        with tempfile.TemporaryDirectory() as directory:
+            paths = SkillPaths(home_override=Path(directory) / "hermes")
+            paths.legacy_state.parent.mkdir(parents=True)
+            paths.legacy_state.write_text(
+                json.dumps({"version": 1, "history": [{"action": "update", "name": "old"}]}),
+                encoding="utf-8",
+            )
+
+            store = StateStore(paths.state, paths.legacy_state)
+            self.assertEqual(store.load()["history"][0]["name"], "old")
+            store.record({"action": "delete-codex", "name": "new"})
+
+            self.assertTrue(paths.state.is_file())
+            self.assertEqual(store.load()["history"][1]["name"], "old")
+
+    def test_history_failure_does_not_mask_completed_operation(self):
+        store = StateStore(Path("/unreachable/state.json"))
+        store.record = lambda _event: (_ for _ in ()).throw(OSError("read only"))
+        store.record_best_effort({"action": "delete", "name": "example"})
+
+    def test_sync_accepts_builtin_local_and_community_and_records_history(self):
+        for kind in ("builtin", "local", "hub-installed"):
+            with self.subTest(kind=kind), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                source = root / "hermes" / "demo"
+                target = root / "codex" / "skills" / "demo"
+                source.mkdir(parents=True)
+                (source / "SKILL.md").write_text("demo", encoding="utf-8")
+                row = {"name": "demo", "kind": kind, "source": kind, "installPath": "demo"}
+                inventory = InventoryStub([row], source, target)
+                state = StateStub()
+                manager = SkillManager(inventory=inventory, state=state, runtime=RuntimeStub())
+
+                result = manager.sync_codex(kind, "demo")
+                self.assertTrue(result["ok"])
+                self.assertTrue((target / "SKILL.md").is_file())
+                self.assertEqual(state.events[0]["action"], "sync-codex")
+
+    def test_sync_force_requires_exact_confirmation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "source"
+            target = root / "target"
+            source.mkdir()
+            (source / "SKILL.md").write_text("demo", encoding="utf-8")
+            local = {"name": "demo", "kind": "local", "source": "local", "installPath": "demo"}
+            manager = SkillManager(
+                inventory=InventoryStub([local], source, target),
+                state=StateStub(),
+                runtime=RuntimeStub(),
+            )
+            with self.assertRaises(SkillManagerError):
+                manager.sync_codex("local", "demo", confirm="wrong", force=True)
+
+    def test_destructive_actions_require_exact_name_before_discovery(self):
+        manager = SkillManager(inventory=InventoryStub([]), state=StateStub(), runtime=RuntimeStub())
+        for method in (manager.delete, manager.reset):
+            with self.subTest(method=method.__name__), self.assertRaises(SkillManagerError) as raised:
+                method("builtin", "example", "wrong")
+            self.assertEqual(raised.exception.status_code, 400)
+
+    def test_hub_delete_removes_the_displayed_copy_left_outside_the_lock_path(self):
+        with tempfile.TemporaryDirectory() as directory:
+            displayed = Path(directory) / "skills" / "productivity" / "demo"
+            displayed.mkdir(parents=True)
+            (displayed / "SKILL.md").write_text(
+                "---\nname: demo\ndescription: duplicate community skill\n---\n",
+                encoding="utf-8",
+            )
+            row = {
+                "name": "demo",
+                "kind": "hub-installed",
+                "source": "skills.sh",
+                "installPath": "productivity/demo",
+            }
+            state = StateStub()
+            runtime = RuntimeStub()
+            manager = SkillManager(
+                inventory=InventoryStub([row], displayed, Path(directory) / "codex"),
+                state=state,
+                runtime=runtime,
+            )
+
+            result = manager.delete("hub-installed", "demo", "demo")
+
+            self.assertTrue(result["ok"])
+            self.assertFalse(displayed.exists())
+            self.assertEqual(runtime.calls, [("uninstall", "demo")])
+            self.assertEqual(state.events[0]["source"], "hub-installed")
+
+    def test_runtime_cache_clear_invalidates_prompt_and_discovery_caches(self):
+        prompt_builder = types.ModuleType("agent.prompt_builder")
+        prompt_calls = []
+        prompt_builder.clear_skills_system_prompt_cache = (
+            lambda **kwargs: prompt_calls.append(kwargs)
+        )
+        agent_package = types.ModuleType("agent")
+        agent_package.prompt_builder = prompt_builder
+
+        skills_tool = types.ModuleType("tools.skills_tool")
+        skills_tool._SKILLS_CACHE = {"with_disabled": ("stale",)}
+        skills_tool.clear_skills_cache = lambda: skills_tool._SKILLS_CACHE.clear()
+        tools_package = types.ModuleType("tools")
+        tools_package.skills_tool = skills_tool
+
+        with patch.dict(sys.modules, {
+            "agent": agent_package,
+            "agent.prompt_builder": prompt_builder,
+            "tools": tools_package,
+            "tools.skills_tool": skills_tool,
+        }):
+            HermesRuntime.clear_skill_cache()
+
+        self.assertEqual(prompt_calls, [{"clear_snapshot": True}])
+        self.assertEqual(skills_tool._SKILLS_CACHE, {})
+
+    def test_all_hermes_content_mutations_clear_cache_and_record(self):
+        with tempfile.TemporaryDirectory() as directory:
+            local_path = Path(directory) / "local"
+            local_path.mkdir()
+            rows = [
+                {"name": "local", "kind": "local", "source": "local", "installPath": "local"},
+                {"name": "builtin", "kind": "builtin", "source": "builtin", "installPath": "builtin"},
+                {"name": "hub", "kind": "hub-installed", "source": "hub", "installPath": "hub", "identifier": "owner/repo", "category": "tools"},
+            ]
+            inventory = InventoryStub(rows, local_path, Path(directory) / "codex")
+            inventory.missing["missing"] = {
+                "name": "missing", "kind": "builtin", "source": "builtin", "installPath": "missing"
+            }
+            state = StateStub()
+            runtime = RuntimeStub()
+            manager = SkillManager(inventory=inventory, state=state, runtime=runtime)
+
+            manager.delete("local", "local", "local")
+            manager.reset("builtin", "builtin", "builtin")
+            manager.reset("hub-installed", "hub", "hub")
+            manager.restore("missing")
+            manager.update("hub")
+
+            self.assertEqual(runtime.clear_count, 5)
+            self.assertEqual([event["action"] for event in state.events], [
+                "delete", "reset", "reset", "restore", "update"
+            ])
+            self.assertIn(("reset-hub", "hub", "owner/repo", "tools"), runtime.calls)
+
+    def test_translation_workflow_is_scheduled_unified_and_scoped(self):
+        workflow = (
+            ROOT / ".github" / "workflows" / "sync-skill-translations.yml"
+        ).read_text(encoding="utf-8")
+        self.assertIn("workflow_dispatch:", workflow)
+        self.assertIn('cron: "17 3 * * 1"', workflow)
+        self.assertEqual(workflow.count("uses: actions/checkout@"), 2)
+        self.assertIn("ref: dev", workflow)
+        self.assertIn("git push origin HEAD:dev", workflow)
+        self.assertNotIn("HEAD:main", workflow)
+        self.assertIn("contents: write", workflow)
+        self.assertIn("scripts/sync_builtin_catalog.py", workflow)
+        self.assertIn("dashboard/data/builtin_catalog.json", workflow)
+        self.assertNotIn("optional", workflow.lower())
+        self.assertNotIn("git add -A", workflow)
+
+    def test_optional_module_assets_and_backend_contract_are_removed(self):
+        self.assertFalse((DASHBOARD / "data" / "optional_catalog.json").exists())
+        self.assertFalse((ROOT / "scripts" / "sync_optional_catalog.py").exists())
+        production_files = [
+            DASHBOARD / "plugin_api.py",
+            DASHBOARD / "skill_manager" / "inventory.py",
+            DASHBOARD / "skill_manager" / "paths.py",
+            DASHBOARD / "skill_manager" / "runtime.py",
+            DASHBOARD / "skill_manager" / "service.py",
+        ]
+        for path in production_files:
+            with self.subTest(path=path.name):
+                self.assertNotIn("optional", path.read_text(encoding="utf-8").lower())
+
+    def test_plugin_update_requires_confirmation_syncs_entry_and_records_history(self):
+        with tempfile.TemporaryDirectory() as directory:
+            paths = SkillPaths(home_override=Path(directory) / "hermes")
+            state = StateStub()
+            runtime = RuntimeStub()
+            manager = SkillManager(paths=paths, state=state, runtime=runtime)
+
+            with self.assertRaises(SkillManagerError) as raised:
+                manager.update_plugin("wrong")
+            self.assertEqual(raised.exception.status_code, 400)
+            self.assertEqual(runtime.calls, [])
+
+            result = manager.update_plugin("skill-manager")
+
+            self.assertTrue(result["ok"])
+            self.assertEqual(runtime.calls, [(
+                "plugin-update",
+                "skill-manager",
+                ROOT,
+                paths.home / "desktop-plugins" / "skill-manager" / "plugin.js",
+            )])
+            self.assertEqual(state.events[0]["action"], "plugin-update")
+
+    def test_inventory_contract_keeps_counts_history_diagnostics_and_paths(self):
+        class InventoryForResponse:
+            def bundled_skills(self, diagnostics):
+                return []
+
+            def rows(self, diagnostics, _names):
+                return [
+                    {"name": "a", "kind": "builtin", "source": "builtin", "category": "", "status": "enabled"},
+                    {"name": "b", "kind": "local", "source": "local", "category": "tools", "status": "disabled"},
+                ]
+
+            def missing_builtin_rows(self, _rows, _bundled):
+                return [{"name": "missing"}]
+
+            def codex_inventory(self, diagnostics):
+                diagnostics.append({"component": "codex-skill", "message": "partial"})
+                return [{"name": "codex"}]
+
+            def qwenwork_inventory(self, diagnostics):
+                return [{"name": "qwen"}]
+
+            def workbuddy_inventory(self, diagnostics):
+                return [{"name": "workbuddy"}]
+
+        paths = SkillPaths(
+            home_override=Path("/hermes"),
+            skills_override=Path("/hermes/skills"),
+            codex_home_override=Path("/codex"),
+        )
+        manager = SkillManager(
+            paths=paths,
+            inventory=InventoryForResponse(),
+            state=StateStub(),
+            runtime=RuntimeStub(),
+        )
+        result = manager.inventory()
+        self.assertEqual(result["counts"], {"builtin": 1, "local": 1})
+        self.assertEqual(result["enabledCount"], 1)
+        self.assertEqual(result["disabledCount"], 1)
+        self.assertEqual(result["missingBuiltinCount"], 1)
+        self.assertEqual(result["codexSkillCount"], 1)
+        self.assertEqual(result["qwenworkSkillCount"], 1)
+        self.assertEqual(result["workbuddySkillCount"], 1)
+        self.assertNotIn("optionalSkills", result)
+        self.assertTrue(result["meta"]["partial"])
+        self.assertEqual(result["meta"]["skillsDir"], "/hermes/skills")
+
+    def test_http_adapter_translates_domain_errors_and_keeps_routes_thin(self):
+        module = load_backend()
+        expected_routes = {
+            "/inventory", "/delete", "/reset", "/restore", "/update",
+            "/plugin-update", "/delete-codex", "/delete-qwen", "/delete-workbuddy",
+            "/sync-codex", "/link-agent", "/unlink-agent", "/link-qwen", "/link-workbuddy",
+        }
+        if hasattr(module.router, "routes"):
+            self.assertEqual({route.path for route in module.router.routes}, expected_routes)
+        else:
+            adapter_source = BACKEND.read_text(encoding="utf-8")
+            for route in expected_routes:
+                self.assertIn(f'("{route}")', adapter_source)
+
+        class BrokenManager:
+            def inventory(self):
+                raise module.SkillManagerError(503, "discovery failed")
+
+        module._manager = BrokenManager
+        with self.assertRaises(module.HTTPException) as raised:
+            asyncio.run(module.inventory())
+        self.assertEqual(raised.exception.status_code, 503)
+        self.assertIn("discovery failed", raised.exception.detail)
+        self.assertLess(len(BACKEND.read_text(encoding="utf-8").splitlines()), 140)
+
+    def test_blocking_mutation_routes_run_in_fastapi_threadpool(self):
+        module = load_backend()
+        mutation_routes = (
+            "delete_skill",
+            "reset_skill",
+            "restore_builtin",
+            "update_skill",
+            "update_plugin",
+            "delete_codex_skill",
+            "delete_qwen_skill",
+            "delete_workbuddy_skill",
+            "sync_skill_to_codex",
+        )
+        for route in mutation_routes:
+            with self.subTest(route=route):
+                self.assertFalse(inspect.iscoroutinefunction(getattr(module, route)))
+
+    def test_version_metadata_and_documentation_stay_in_sync(self):
+        plugin_yaml = (ROOT / "plugin.yaml").read_text(encoding="utf-8")
+        plugin_name = re.search(r"^name:\s*(\S+)", plugin_yaml, re.MULTILINE).group(1)
+        version = re.search(r"^version:\s*(\S+)", plugin_yaml, re.MULTILINE).group(1)
+        manifest = json.loads((DASHBOARD / "manifest.json").read_text(encoding="utf-8"))
+        desktop_source = (ROOT / "desktop" / "plugin.js").read_text(
+            encoding="utf-8"
+        )
+        self.assertEqual(plugin_name, "skill-manager")
+        self.assertEqual(plugin_name, manifest["name"])
+        self.assertEqual(version, manifest["version"])
+        self.assertIn("const ID = 'skill-manager'", desktop_source)
+        self.assertIn("iPotatow/hermes-skill-manager", (ROOT / "README.md").read_text(encoding="utf-8"))
+        self.assertIn(f"版本：`{version}`", (ROOT / "README.md").read_text(encoding="utf-8"))
+        self.assertIn(f"Version: `{version}`", (ROOT / "README_EN.md").read_text(encoding="utf-8"))
+
+    def test_dashboard_manifest_hides_backend_only_plugin_from_sidebar(self):
+        manifest = json.loads((DASHBOARD / "manifest.json").read_text(encoding="utf-8"))
+        self.assertEqual(manifest["api"], "plugin_api.py")
+        self.assertIs(manifest["tab"]["hidden"], True)
+        self.assertNotIn("entry", manifest)
+
+    def test_profile_skill_resolution_uses_supported_hermes_helper(self):
+        source = (DASHBOARD / "skill_manager" / "paths.py").read_text(encoding="utf-8")
+        self.assertIn("from tools.skills_tool import _skills_dir", source)
+        self.assertNotIn("_compute_relative_dest", source)
+
+
+if __name__ == "__main__":
+    unittest.main()
